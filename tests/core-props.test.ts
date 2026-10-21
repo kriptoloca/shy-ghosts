@@ -110,7 +110,7 @@ describe('rules: properties over 2,000 random houses', () => {
         const problems: string[] = [];
         for (const m of moves) {
           const ev = apply(s, m);
-          screen.play(ev);
+          screen.play(ev, m.kind);
           problems.push(...orderProblems(ev));
           if (JSON.stringify(screen.view()) !== JSON.stringify(view(s))) {
             problems.push(

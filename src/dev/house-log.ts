@@ -19,6 +19,9 @@ export interface Tally {
   undos: number;
   /** Hints asked for: counted at the first press, which shows the reason (D74). */
   hints: number;
+  /** Presses of the undo and the hint buttons, whatever they did (the neutral state, D87). */
+  undoPresses: number;
+  hintPresses: number;
   /**
    * Moves after which a ghost shivers that did not before: one per move, however many ghosts
    * shiver (Gate B's B1 counts shivering placements; audit 2026-10-21, ORTA 6).
@@ -26,14 +29,21 @@ export interface Tally {
   shivers: number;
 }
 
+/** One move as the player asked for it and the events it gave (round 1's code audit, DÜŞÜK 8). */
+export interface LoggedMove {
+  kind: MoveKind;
+  events: readonly PlayEvent[];
+}
+
 /**
  * One house's record for the dev hooks (D62, D66): the board when the house opened, every event
- * list the scene played since, and the tally of what the player did. The Game scene keeps one
+ * list the scene played since with the kind of move that gave it, and the tally of what the
+ * player did. The Game scene keeps one
  * only in DEV builds, so production holds no log that grows with every move and ships none of
  * this module (audit 2026-10-21, DÜŞÜK 8; the smoke e2e checks the bundle).
  */
 export class HouseLog {
-  readonly moves: (readonly PlayEvent[])[] = [];
+  readonly moves: LoggedMove[] = [];
   readonly tally: Tally = {
     taps: 0,
     placements: 0,
@@ -47,6 +57,8 @@ export class HouseLog {
     erased: 0,
     undos: 0,
     hints: 0,
+    undoPresses: 0,
+    hintPresses: 0,
     shivers: 0,
   };
 
@@ -59,7 +71,7 @@ export class HouseLog {
     if (kind === 'stroke') t.strokes++;
     if (kind === 'drag') t.drags++;
     if (kind === 'undo' && events.length > 0) t.undos++;
-    if (events.length > 0) this.moves.push(events);
+    if (events.length > 0) this.moves.push({ kind, events });
     if (kind === 'undo') return;
     for (const e of events) {
       if (e.type === 'placed') t.placements++;
@@ -80,5 +92,11 @@ export class HouseLog {
   /** The hint's first press showed its reason: one hint, whatever completes it (D74). */
   hinted(): void {
     this.tally.hints++;
+  }
+
+  /** A button was pressed, whatever it did. */
+  pressed(name: 'undo' | 'hint'): void {
+    if (name === 'undo') this.tally.undoPresses++;
+    else this.tally.hintPresses++;
   }
 }

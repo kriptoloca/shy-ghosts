@@ -268,6 +268,37 @@ export function geometry(n: number, objectString: string): Geometry {
   };
 }
 
+/** A cell a bookshelf hides from a lamp, and that shelf. */
+export interface Shadow {
+  cell: number;
+  shelf: number;
+}
+
+/**
+ * A lamp's shadows (house 10's lesson and its demonstration, D81, D83): along its row and column,
+ * up, left, right then down, the cells past the first bookshelf, up to the edge or the next lamp,
+ * each with that first shelf (a second shelf adds no shadow of its own). The one walk the build's
+ * lesson test and the demonstration share, so the two cannot disagree (round 2's code audit,
+ * DÜŞÜK 10).
+ */
+export function shadowsOf(n: number, objects: string | readonly string[], lamp: number): Shadow[] {
+  const out: Shadow[] = [];
+  for (const [dr, dc] of STEPS) {
+    let shelf = -1;
+    let r = Math.floor(lamp / n) + dr;
+    let c = (lamp % n) + dc;
+    for (; r >= 0 && r < n && c >= 0 && c < n; r += dr, c += dc) {
+      const i = r * n + c;
+      const o = objects[i];
+      if (o === 'L') break;
+      if (o === 'F') {
+        if (shelf < 0) shelf = i;
+      } else if (shelf >= 0) out.push({ cell: i, shelf });
+    }
+  }
+  return out;
+}
+
 /**
  * Two different cells see each other: both unblocked and in one row or column segment, so room
  * walls and other ghosts never block sight (GDD §3).

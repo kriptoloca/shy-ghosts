@@ -281,11 +281,27 @@ test('?playtest=1 hides the solution from the hooks; visible() names no rule', a
     solution: window.__ghostDebug?.solution?.(),
     house: window.__ghostDebug?.house?.(),
     text: window.__ghostDebug?.visible?.() ?? '',
-    playtest: window.__ghostDebug?.state().playtest,
+    state: window.__ghostDebug?.state() as Record<string, unknown> | undefined,
   }));
   expect(got.solution).toBeNull();
   expect(got.house?.solution).toBeNull();
-  expect(got.playtest).toBe(true);
+  // the neutral state (D87): no solution, no phase, no tally, no reason
+  expect(Object.keys(got.state ?? {}).sort()).toEqual(
+    [
+      'arrangement',
+      'bulbReadyIn',
+      'cell',
+      'drags',
+      'house',
+      'input',
+      'n',
+      'paused',
+      'presses',
+      'seconds',
+      'shown',
+      'taps',
+    ].sort(),
+  );
   expect(got.text).toMatch(/^house 17 · 6 × 6/);
   // house 17 has a lamp: the floor shows its sun icon and its warm wash, in words of what is drawn
   const lines = got.text.split('\n');
@@ -294,11 +310,6 @@ test('?playtest=1 hides the solution from the hooks; visible() names no rule', a
   expect(rows).toContain('@');
   expect(rows).toContain('~');
   expect(got.text.match(RULE_WORDS)?.[0] ?? null).toBeNull();
-  // the hint's reason shows where to look, never the cell it would fill (D74)
-  await press(page, 'hint');
-  const reason = (await waitState(page, (s) => s.hints === 1, 'the reason')).hintReason;
-  expect(reason?.kind).toBe('place');
-  expect(reason && 'cell' in reason).toBe(false);
 });
 
 test('a house restored already solved plays its win and moves on by itself (D49)', async ({

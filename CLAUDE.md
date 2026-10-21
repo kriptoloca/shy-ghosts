@@ -66,7 +66,9 @@ So, here:
 5. **Aspect ratios:** 9:16 (primary), 1:1, 16:9 all correct. Phaser `Scale.FIT` with a design
    size that follows the window aspect: short side 1080 design px, long side `1080 × aspect`
    clamped to [1080, 2400]; on resize `scale.setGameSize(w, h)` then `layout()`. `computeLayout`
-   is pure and unit-tested over every design size. Cells ≥ 80 design px at 9 × 9 in every aspect.
+   is pure and unit-tested over every design size. No house is larger than 8 × 8; cells are
+   ≥ 80 design px in every aspect and, in portrait, ≥ 44 CSS px on a 360 × 640 phone and ≥ 66
+   at 540 × 960.
 6. **Ads:** an interstitial only between houses, after a solve, and only when all of these hold
    (GDD §8): ≥ 5:00 of play this session before the first one; ≥ 3 houses and ≥ 120 s since the
    last one (or the session start); ≥ 60 s since a rewarded ad; never before house 4; never
@@ -121,9 +123,10 @@ so they are deterministic and unit-testable.
 - No magic numbers in gameplay code: constants live in `src/config.ts`, `src/game/feel.ts` and
   `src/gen/params.ts`, each with a comment.
 - Input (GDD §3): a **tap** is a pointer-down and pointer-up in the same cell with < 24 design
-  px of movement; a **drag** (≥ 24 design px) paints marks, or erases them when it starts on a
-  marked cell. HUD buttons act on a pointer-up that follows a pointer-down on the same button,
-  so a press held through a pause never counts.
+  px of movement; a **drag** (≥ 24 design px) that starts on a placed ghost carries it (one move,
+  one undo step); from an empty cell it paints marks, from a marked cell it erases them, from a
+  given it only nudges it. HUD buttons act on a pointer-up that follows a pointer-down on the
+  same button, so a press held through a pause never counts.
 - The rules resolve at once in `src/core`; the scene only plays them back. The settled screen
   always equals the rules (an e2e compares them).
 - Dev hooks and dev URL parameters live only inside `import.meta.env.DEV` (an e2e checks the

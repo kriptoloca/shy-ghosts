@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import {
   COLOR_PAGE,
+  DEMO_MARK_HOUSE,
   DIM_ALPHA,
   DRAG_PX,
   SAVE_DEBOUNCE_MS,
@@ -18,7 +19,7 @@ import type { PlayHouse } from '../../gen/record';
 import { getPlatform, markInteractive } from '../../platform/bridge';
 import type { HouseInProgress } from '../../platform/storage';
 import { BoardDisplay } from '../board';
-import { demoFor } from '../demo';
+import { demoFor, type DemoScript } from '../demo';
 import { makeGrayboxTextures } from '../graybox';
 import { Gesture } from '../gesture';
 import { Hud, type ButtonName } from '../hud';
@@ -26,7 +27,7 @@ import { cellAt, computeLayout, type Layout } from '../layout';
 import { roomStyles } from '../look';
 import { advanceHouse, progress, recordHouseInProgress } from '../progress';
 import { ResumeGrace, bindPauseGrace } from '../resume-grace';
-import { HintClock, HouseSession, type MoveKind } from '../session';
+import { DemoClock, HintClock, HintFlow, HouseSession, type MoveKind } from '../session';
 import { BoardView } from '../view';
 
 /** The house on screen and everything that belongs to it. */
@@ -39,8 +40,10 @@ export interface HouseOnScreen {
   session: HouseSession;
   board: BoardDisplay;
   layout: Layout;
-  /** The house came from the save (a resume): its demonstration is not shown again (D70). */
+  /** The house came from the save (a resume): its demonstration is not shown first (D70, D83). */
   resumed: boolean;
+  /** Its teaching demonstration (D83), or null. */
+  demo: DemoScript | null;
   /**
    * The board when the house opened, every event list played since and the tally, for the dev
    * hooks: DEV builds only (audit 2026-10-21, DÜŞÜK 8).
@@ -53,27 +56,48 @@ export type Phase = 'demo' | 'play' | 'win' | 'slide';
 /** The finale from the solve to the next house: the beat, then the slide (D73). */
 const FINALE_MS = WIN_BEAT_MS + SLIDE_MS;
 
-/** Events that change the ghosts on the board (a pending hint's reason no longer holds, D74). */
-const GHOST_EVENTS: ReadonlySet<PlayEvent['type']> = new Set([
-  'placed',
-  'relocated',
-  'moved',
-  'removed',
-]);
+/** The dev hooks' record of the scene (DEV builds only; round 1's code audit, DÜŞÜK 9). */
+interface DevState {
+  /** Boards built so far (a resize at the same size builds none). */
+  builds: number;
+  /**
+   * The last finale: its beat on the scene's clock, the whole of it on the wall clock, how far
+   * the clock moved in the frame the slide began, and how many ghosts still played a settle's
+   * motion as the ghosts began to hop.
+   */
+  lastFinale: { beatMs: number; wallMs: number; stepMs: number; settling: number | null } | null;
+  /** How far the last beat ran before the slide, on the scene's clock (a tap cuts it short). */
+  slidAt: number;
+  /** The finale's clock at its last step, and how far it moved in the step the slide began. */
+  stepAt: number;
+  slideStepMs: number;
+  /** Demonstrations started since the Game began, replays included (D70, D83). */
+  demos: number;
+  /** The house on screen: when it appeared, when its input opened, whether a tap skipped it. */
+  shownAt: number | null;
+  playAt: number | null;
+  demoSkipped: boolean;
+}
 
 /**
- * Game (GDD §11 screen 2), the graybox loop of Epic 3 with Gate B's round-1 changes: the house to
- * play, its teaching demonstration in the first house of each element (D70; a tap skips it, a
- * resume never replays it), taps on its cells, drags that paint marks or carry a ghost (D72), undo
- * and the free two-press hint (the reason, then the move; D74), the progress dots (D75), the
- * finale and the next house sliding in by itself (D73; a tap skips it from WIN_SKIP_FROM_MS), the
- * save after every change (debounced) and every house, the resume of a house in progress, the
- * platform pause (everything freezes under a dim cover; the waking tap never counts). The rules
- * resolve in src/core; this scene only plays their events back (CLAUDE.md).
+ * Game (GDD §11 screen 2), the graybox loop of Epic 3 with Gate B's round-1 and round-2 changes:
+ * the house to play, its teaching demonstration (D70, D83: as it appears, unless resumed, and
+ * again after DEMO_IDLE_MS without input until the first placement; a tap skips it, never in its
+ * first DEMO_SKIP_FROM_MS), taps on its cells, drags that paint marks or carry a ghost (D72), undo
+ * and the free two-press hint (the reason, which stays until the next move, then the step; D74,
+ * D86), the progress dots (D75), the finale and the next house sliding in by itself (D73, D84; a
+ * tap skips it from WIN_SKIP_FROM_MS), the save after every change (debounced) and every house,
+ * the resume of a house in progress, the platform pause (everything freezes under a dim cover,
+ * the tween clock included; the waking tap never counts). The rules resolve in src/core; this
+ * scene only plays their events back (CLAUDE.md).
  */
 export class GameScene extends Phaser.Scene {
   private readonly grace = new ResumeGrace(this);
   private readonly hints = new HintClock();
+  /** The hint's reason on the board, waiting for its second press (D74, D86). */
+  private readonly hintFlow = new HintFlow<HintExplain>();
+  /** The house's demonstration: replays and the early-tap guard (D83). */
+  private readonly demoClock = new DemoClock();
   private house!: HouseOnScreen;
   private hud!: Hud;
   private dim!: Phaser.GameObjects.Rectangle;
@@ -96,24 +120,32 @@ export class GameScene extends Phaser.Scene {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saving = 0;
   private interactiveAt: number | null = null;
-  /** Boards built so far (dev state: a resize at the same size builds none). */
-  private builds = 0;
   /** The house finished last (dev hooks: the e2e replays its moves). */
   private previous: HouseOnScreen | null = null;
   /** The next house, built hidden during the finale's hit stop so the slide never stutters. */
   private next: HouseOnScreen | null = null;
-  /** The hint's first press showed this reason; the second press completes it (D74). */
-  private pending: HintExplain | null = null;
   /** The teaching demonstration's end, on the tween clock like its motions (D70). */
   private demoEnd: Phaser.Tweens.Tween | null = null;
-  /** How far the last beat ran before the slide (all of it, unless a tap skipped the rest). */
-  private slidAt = 0;
-  /** Dev state: the last finale, demonstrations started, the house on screen's times. */
-  private lastFinale: { beatMs: number; wallMs: number } | null = null;
-  private demos = 0;
-  private shownAt: number | null = null;
-  private playAt: number | null = null;
-  private demoSkipped = false;
+  /**
+   * After a platform pause the tween clock stays stopped (timeScale 0) until its first step, which
+   * would otherwise credit up to 500 ms of the pause (round 1's code audit, ORTA 3): the tween
+   * manager's time when the pause ended.
+   */
+  private thawFrom: number | null = null;
+  /** The dev hooks' record (null in production builds, which keep none). */
+  private readonly dev: DevState | null = import.meta.env.DEV
+    ? {
+        builds: 0,
+        lastFinale: null,
+        slidAt: 0,
+        stepAt: 0,
+        slideStepMs: 0,
+        demos: 0,
+        shownAt: null,
+        playAt: null,
+        demoSkipped: false,
+      }
+    : null;
 
   constructor() {
     super('Game');
@@ -205,17 +237,20 @@ export class GameScene extends Phaser.Scene {
           buttonEnabled: (name) => this.hud.enabled(name),
           canvas: () => this.game.canvas,
           size: () => this.scale.gameSize,
-          builds: () => this.builds,
+          builds: () => this.dev?.builds ?? 0,
           dimmed: () => this.dim.visible,
           effects: () => this.house.board.effects(),
           previous: () => this.previous,
           beatMs: () => (this.phase === 'win' ? this.finaleAt() : null),
-          finale: () => this.lastFinale,
-          demos: () => this.demos,
-          shownAt: () => this.shownAt,
-          playAt: () => this.playAt,
-          demoSkipped: () => this.demoSkipped,
-          hintReason: () => this.pending,
+          finale: () => this.dev?.lastFinale ?? null,
+          demos: () => this.dev?.demos ?? 0,
+          shownAt: () => this.dev?.shownAt ?? null,
+          playAt: () => this.dev?.playAt ?? null,
+          demoSkipped: () => this.dev?.demoSkipped ?? false,
+          hintReason: () => this.hintFlow.pending,
+          reasonShown: () => this.house.board.showingReason,
+          timeShown: () => this.house.board.shownTime(),
+          tweenScale: () => this.tweens.timeScale,
         });
       });
     }
@@ -229,8 +264,21 @@ export class GameScene extends Phaser.Scene {
 
   override update(_time: number, delta: number): void {
     if (this.paused) return;
+    // the tween manager stepped since the resume, at timeScale 0: the pause is not credited
+    if (this.thawFrom !== null && this.tweens.time !== this.thawFrom) {
+      this.thawFrom = null;
+      this.tweens.timeScale = 1;
+    }
     if (this.phase === 'win' || this.phase === 'slide') this.finaleStep();
-    if (this.phase === 'play') this.house.session.tick(delta);
+    if (this.phase === 'play') {
+      this.house.session.tick(delta);
+      // input in hand is no idle time, and a demonstration never plays again over it or over a
+      // hint's reason (round 2's code audit, YÜKSEK 1, ORTA 1)
+      const held = this.inputHeld();
+      if (held) this.demoClock.input();
+      else this.demoClock.idle(delta);
+      if (this.demoClock.due(held || this.hintFlow.pending !== null)) this.playDemo(true);
+    } else if (this.phase === 'demo') this.demoClock.run(delta, this.game.loop.frame);
     const wasReady = this.hints.ready;
     this.hints.tick(delta);
     this.hud.setCooldown(this.hints.share);
@@ -260,37 +308,73 @@ export class GameScene extends Phaser.Scene {
       board,
       layout,
       resumed: saved !== null,
+      demo: demoFor(id, model),
       log: import.meta.env.DEV ? new HouseLog(view.snapshot()) : null,
     };
   }
 
   /**
-   * The house on screen opens: first its teaching demonstration, when it is the first house of an
-   * element and was not resumed (D70); input stays closed until it ends or a tap skips it.
+   * The house on screen opens: first its teaching demonstration, unless it was resumed (D70,
+   * D83); input stays closed until it ends or a tap skips it. It plays again after DEMO_IDLE_MS
+   * without input until the house's first placement (house 3: its first mark), a resume included.
    */
   private begin(): void {
     const h = this.house;
-    this.shownAt = performance.now();
-    this.playAt = null;
-    this.demoSkipped = false;
-    const script = h.resumed ? null : demoFor(h.id, h.model);
-    if (script) {
-      this.phase = 'demo';
-      this.demos++;
-      h.board.demo(script);
-      this.demoEnd = this.tweens.addCounter({
-        from: 0,
-        to: 1,
-        duration: script.ms,
-        onComplete: () => {
-          this.demoEnd = null;
-          this.endDemo(false);
-        },
-      });
-    } else {
-      this.phase = 'play';
-      this.playAt = this.shownAt;
+    if (import.meta.env.DEV && this.dev) {
+      this.dev.shownAt = performance.now();
+      this.dev.playAt = null;
+      this.dev.demoSkipped = false;
     }
+    this.demoClock.reset(h.demo !== null && !this.playedInto(h));
+    if (h.demo && !h.resumed) this.playDemo(false);
+    else {
+      this.phase = 'play';
+      if (import.meta.env.DEV && this.dev) this.dev.playAt = this.dev.shownAt;
+    }
+    this.updateHud();
+  }
+
+  /** The house has its first placement (house 3: its first mark), so its demonstration rests. */
+  private playedInto(h: HouseOnScreen): boolean {
+    if (h.id === DEMO_MARK_HOUSE) return h.state.markedCells().length > 0;
+    return h.state.ghostCells().some((c) => !h.model.givens.includes(c));
+  }
+
+  /**
+   * A pointer or a button is down: a press, a drag, a carry or a stroke in hand. Read every frame
+   * in play, so it allocates nothing (round 2's re-audit, DÜŞÜK).
+   */
+  private inputHeld(): boolean {
+    if (this.gesture.active || this.hud.pressing) return true;
+    for (const p of this.input.manager.pointers) if (p.isDown) return true;
+    return false;
+  }
+
+  /**
+   * The demonstration plays, as the house appears or again after idle time (D83). Whatever input
+   * was in hand ends, as a platform pause ends it (round 2's code audit, YÜKSEK 1).
+   */
+  private playDemo(replay: boolean): void {
+    const h = this.house;
+    if (!h.demo) return;
+    this.phase = 'demo';
+    this.demoClock.started(replay, this.game.loop.frame);
+    if (import.meta.env.DEV && this.dev) this.dev.demos++;
+    this.gesture.cancel();
+    this.stroke = [];
+    h.board.clearStroke();
+    h.board.endCarry();
+    this.hud.cancelPress();
+    h.board.demo(h.demo);
+    this.demoEnd = this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: h.demo.ms,
+      onComplete: () => {
+        this.demoEnd = null;
+        this.endDemo(false);
+      },
+    });
     this.updateHud();
   }
 
@@ -301,13 +385,16 @@ export class GameScene extends Phaser.Scene {
     this.demoEnd = null;
     this.house.board.endDemo();
     this.phase = 'play';
-    this.demoSkipped = skipped;
-    this.playAt = performance.now();
+    this.demoClock.input();
+    if (import.meta.env.DEV && this.dev) {
+      this.dev.demoSkipped = skipped;
+      this.dev.playAt = performance.now();
+    }
     this.updateHud();
   }
 
   private build(view: BoardView, layout: Layout, model: HouseModel): BoardDisplay {
-    this.builds++;
+    if (import.meta.env.DEV && this.dev) this.dev.builds++;
     return new BoardDisplay(this, view, layout, roomStyles(model));
   }
 
@@ -319,10 +406,10 @@ export class GameScene extends Phaser.Scene {
     this.wonAt = performance.now();
     this.skipped = 0;
     this.pausedMs = 0;
+    if (import.meta.env.DEV && this.dev) this.dev.stepAt = 0;
     // a house restored solved under a platform pause (D49) starts its finale paused
     this.pausedAt = this.paused ? this.wonAt : null;
-    this.slidAt = WIN_BEAT_MS;
-    this.pending = null;
+    this.hintFlow.clear();
     h.board.clearReason();
     if (import.meta.env.DEV) this.previous = h;
     h.session.finish();
@@ -356,6 +443,7 @@ export class GameScene extends Phaser.Scene {
   private finaleStep(): void {
     const at = this.finaleAt();
     if (this.phase === 'win' && at >= WIN_BEAT_MS) this.slide();
+    if (import.meta.env.DEV && this.dev) this.dev.stepAt = at;
     const old = this.leaving;
     if (this.phase !== 'slide' || !old) return;
     const width = this.scale.gameSize.width;
@@ -369,6 +457,13 @@ export class GameScene extends Phaser.Scene {
   /** The beat is over (or skipped): the next house, built in the hit stop, starts to slide in. */
   private slide(): void {
     if (this.phase !== 'win') return;
+    // how far the beat ran on the scene's clock, as measured now (a tap's skip left out), and how
+    // far the clock moved in this step
+    if (import.meta.env.DEV && this.dev) {
+      const at = this.finaleAt();
+      this.dev.slidAt = at - this.skipped;
+      this.dev.slideStepMs = at - this.dev.stepAt;
+    }
     this.phase = 'slide';
     this.leaving = this.house;
     const next = this.next ?? this.open(progress.house, this.scale.gameSize.width);
@@ -379,7 +474,14 @@ export class GameScene extends Phaser.Scene {
 
   private arrive(): void {
     // measured as the slide ends, before the old board is freed
-    this.lastFinale = { beatMs: this.slidAt, wallMs: performance.now() - this.wonAt };
+    if (import.meta.env.DEV && this.dev) {
+      this.dev.lastFinale = {
+        beatMs: this.dev.slidAt,
+        wallMs: performance.now() - this.wonAt,
+        stepMs: this.dev.slideStepMs,
+        settling: this.leaving?.board.hopOverlap() ?? null,
+      };
+    }
     this.leaving?.board.destroy();
     this.leaving = null;
     this.house.board.root.x = 0;
@@ -402,9 +504,7 @@ export class GameScene extends Phaser.Scene {
   private skip(): void {
     this.hud.cancelPress();
     if (this.phase === 'win') {
-      const at = this.finaleAt();
-      if (at < WIN_SKIP_FROM_MS) return;
-      this.slidAt = at;
+      if (this.finaleAt() < WIN_SKIP_FROM_MS) return;
       this.finaleTo(WIN_BEAT_MS);
     } else if (this.phase === 'slide') this.finaleTo(FINALE_MS);
   }
@@ -414,15 +514,18 @@ export class GameScene extends Phaser.Scene {
   private pointerDown(p: Phaser.Input.Pointer): void {
     if (this.paused) return;
     if (this.phase === 'demo') {
-      // a tap skips the demonstration; it is no game tap and no press (D70)
+      // a tap skips the demonstration; it is no game tap and no press (D70); one in its first
+      // DEMO_SKIP_FROM_MS does nothing at all (a tap left over from the finale; round 1's code
+      // audit, ORTA 2)
       this.hud.cancelPress();
-      this.endDemo(true);
+      if (this.demoClock.skippable()) this.endDemo(true);
       return;
     }
     if (this.phase !== 'play') {
       this.skip();
       return;
     }
+    this.demoClock.input();
     this.gesture.down(p.x, p.y);
     this.stroke = [];
     if (this.gesture.active) this.house.session.input();
@@ -430,6 +533,7 @@ export class GameScene extends Phaser.Scene {
 
   private pointerMove(p: Phaser.Input.Pointer): void {
     if (this.paused || this.phase !== 'play' || !this.gesture.active || !p.isDown) return;
+    this.demoClock.input();
     const added = this.gesture.move(p.x, p.y);
     const h = this.house;
     if (this.gesture.carrying) {
@@ -470,29 +574,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Undo, or the free hint in two presses (D74): the first shows why the next step is forced and
-   * counts the hint (its cooldown starts), the second does it; the player's own move to a ghost
-   * in between completes it instead.
+   * Undo, or the free hint in two presses (D74, D86): the first shows why the next step is forced
+   * and counts the hint (its cooldown starts); the reason stays until the next move, which takes
+   * it away, or the second press, which does the step.
    */
   private press(name: ButtonName): void {
     if (this.paused || this.phase !== 'play') return;
     const h = this.house;
+    this.demoClock.input();
+    if (import.meta.env.DEV) h.log?.pressed(name);
     if (name === 'undo') {
       this.move('undo', h.state.undo());
       return;
     }
-    if (this.pending) {
+    const r = this.hintFlow.press(this.hints.ready, () => h.state.explainHint());
+    if (r.kind === 'complete') {
       this.move('hint', h.state.hint());
       return;
     }
-    if (!this.hints.ready) return;
-    const reason = h.state.explainHint();
-    if (!reason) return;
+    if (r.kind === 'none') return;
     this.hints.used();
     h.session.hinted();
     if (import.meta.env.DEV) h.log?.hinted();
-    this.pending = reason;
-    h.board.showReason(reason);
+    h.board.showReason(r.reason);
     this.updateHud();
     this.scheduleSave();
   }
@@ -502,11 +606,18 @@ export class GameScene extends Phaser.Scene {
     const h = this.house;
     h.session.input();
     if (import.meta.env.DEV) h.log?.add(kind, events);
-    if (this.pending && (kind === 'hint' || events.some((e) => GHOST_EVENTS.has(e.type)))) {
-      this.pending = null;
+    // the player's next move, or the second press, takes the hint's reason away (D86), however
+    // little of it shows at that moment (round 2's code audit, DÜŞÜK 2: a pulse-only reason)
+    const pending = this.hintFlow.move();
+    if (kind === 'hint' || pending) {
       h.board.clearReason();
       this.updateHud();
     }
+    const first =
+      h.id === DEMO_MARK_HOUSE
+        ? events.some((e) => e.type === 'marked' && e.on)
+        : events.some((e) => e.type === 'placed' || e.type === 'moved');
+    if (first) this.demoClock.placed();
     if (events.length === 0) return;
     h.view.play(events);
     h.board.play(events);
@@ -522,7 +633,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.setEnabled('undo', playing && h.state.canUndo);
     this.hud.setEnabled(
       'hint',
-      playing && !h.state.solved && (this.pending !== null || this.hints.ready),
+      playing && !h.state.solved && (this.hintFlow.pending !== null || this.hints.ready),
     );
     this.hud.setCooldown(this.hints.share);
   }
@@ -532,16 +643,18 @@ export class GameScene extends Phaser.Scene {
   /**
    * A new design size (CLAUDE.md rule 5): the house on screen gets a new board, the buttons and
    * the dim follow. Phaser also sends RESIZE when the size has not changed (its own refresh after
-   * a window resize), and that builds nothing (audit 2026-10-21, ORTA 5). A slide ends first; the
-   * win beat plays on, on the new board, for its whole length.
+   * a window resize), and that builds nothing (audit 2026-10-21, ORTA 5). A slide ends first, then
+   * a demonstration (the slide's end may have started one; round 1's code audit, DÜŞÜK 6); the
+   * win beat plays on, on the new board, for its whole length, its solve time shown; a hint's
+   * reason stays.
    */
   private relayout(): void {
     const { width, height } = this.scale.gameSize;
     const laid = this.house.layout.size;
     if (width === laid.width && height === laid.height) return;
     this.dim.setSize(width, height);
-    if (this.phase === 'demo') this.endDemo(false);
     if (this.phase === 'slide') this.finaleTo(FINALE_MS);
+    if (this.phase === 'demo') this.endDemo(false);
     // a next house built for the old size is built again when it slides in
     this.next?.board.destroy();
     this.next = null;
@@ -549,6 +662,9 @@ export class GameScene extends Phaser.Scene {
     h.board.destroy();
     h.layout = computeLayout(this.scale.gameSize, h.model.n);
     h.board = this.build(h.view, h.layout, h.model);
+    if (this.phase === 'win') h.board.showTime(h.session.seconds);
+    const reason = this.hintFlow.pending;
+    if (reason) h.board.showReason(reason, false);
     this.hud.layoutTo(h.layout);
   }
 
@@ -559,6 +675,10 @@ export class GameScene extends Phaser.Scene {
     if (p) {
       this.pausedAt = performance.now();
       this.tweens.pauseAll();
+      // stays 0 until the first tween step after the resume (round 1's code audit, ORTA 3: no
+      // credit for the pause)
+      this.tweens.timeScale = 0;
+      this.thawFrom = null;
       this.time.paused = true;
       this.gesture.cancel();
       this.house.board.clearStroke();
@@ -568,6 +688,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.pausedMs += performance.now() - (this.pausedAt ?? performance.now());
       this.pausedAt = null;
+      this.thawFrom = this.tweens.time;
       this.tweens.resumeAll();
       this.time.paused = false;
     }
@@ -595,12 +716,20 @@ export class GameScene extends Phaser.Scene {
    */
   private flushSave(): void {
     this.cancelSave();
-    if (this.phase === 'play' && this.house.session.started) this.writeSave();
+    if (this.inPlay() && this.house.session.started) this.writeSave();
+  }
+
+  /**
+   * The house on screen is being played: between moves, or while its demonstration plays again
+   * (a pause during a replay saves too; round 2's code audit, DÜŞÜK 1).
+   */
+  private inPlay(): boolean {
+    return this.phase === 'play' || this.phase === 'demo';
   }
 
   /** The house in progress, only ever for the house to play (D50). */
   private writeSave(): void {
-    if (this.phase !== 'play') return;
+    if (!this.inPlay()) return;
     const h = this.house;
     this.saving++;
     void recordHouseInProgress(h.session.inProgress(h.state)).finally(() => {

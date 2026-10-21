@@ -1,15 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 import {
+  DEMO_SKIP_FROM_MS,
   RING_INSET,
   RING_WIDTH,
-  SLIDE_MS,
   WALL_MAX,
   WALL_MIN,
   WALL_SHARE,
   WIN_BEAT_MS,
   WIN_SKIP_FROM_MS,
 } from '../../src/config';
-import { demoFor } from '../../src/game/demo';
 import type { DebugHouse } from '../../src/dev/debug';
 import { contrast, type Rgb } from '../support/colour';
 import { CANVAS, TEST, state, test, waitState } from './helpers';
@@ -28,18 +27,15 @@ import {
 } from './play';
 
 /**
- * Gate B tune round 1 on the dev build (docs/gate-b-round1.md §8, tasks 6–11), by real input: the
- * walls against the floors beside them on a small phone, the finale's length and when a tap may
- * skip it, the teaching demonstrations, carrying a ghost to another room, the progress dots.
+ * Gate B tune round 1 on the dev build (docs/gate-b-round1.md §8, tasks 6–11), by real input, as
+ * round 2 left it: the walls against the floors beside them on a small phone, when a tap may skip
+ * the finale, the teaching demonstrations, carrying a ghost to another room, the progress dots.
+ * What these measure on the wall clock runs alone, after every other test, without retries
+ * (tests/e2e/timing.spec.ts; round 1's code audit, ORTA 5).
  */
 const PHONE = { width: 360, height: 640 };
-/** The finale, from the last placement to the next house: about 2 s (D73). */
-const FINALE_MS = 2000;
-const FINALE_SLACK_MS = 200;
-/** Input opens this soon after a house with a demonstration appears (plan §8, task 8). */
-const DEMO_OPEN_MS = 1600;
-/** A demonstration that ran to its end lasted its script's length, less a frame or two. */
-const FRAME_SLACK_MS = 50;
+/** A tap this long into a demonstration is past its guard (DEMO_SKIP_FROM_MS) with room to spare. */
+const PAST_GUARD_MS = 2 * DEMO_SKIP_FROM_MS;
 /** Floor samples: this far past the wall and its settled ring, a square this many px a side. */
 const FLOOR_GAP = 6;
 const PATCH = 15;
@@ -161,79 +157,52 @@ for (const id of [1, 17, 34]) {
   });
 }
 
-/**
- * Wall-clock timing (D70, D73). The finale and the demonstrations run on the wall clock to within
- * a frame; a headless browser sharing the CPU with another worker can stall a frame for more than
- * 200 ms, which no game can make up, so these tests get two retries. A real regression fails all
- * three runs.
- */
-test.describe('wall-clock timing', () => {
-  test.describe.configure({ retries: 2 });
-
-  test('the finale lasts 2.0 ± 0.2 s from the last placement to the next house (D73)', async ({
-    page,
-  }) => {
-    await open(page, 'reset=1&house=12');
-    await solve(page);
-    const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
-    const f = next.finale;
-    if (!f) throw new Error('no finale measured');
-    // the beat runs its whole length on the scene's clock, then the slide; all of it on the wall clock
-    expect(Math.abs(f.beatMs - WIN_BEAT_MS)).toBeLessThanOrEqual(FRAME_SLACK_MS);
-    expect(WIN_BEAT_MS + SLIDE_MS).toBe(FINALE_MS);
-    expect(Math.abs(f.wallMs - FINALE_MS)).toBeLessThanOrEqual(FINALE_SLACK_MS);
-  });
-
-  test('a tap 300 ms into the finale does not skip it; one at 700 ms does (D73)', async ({
-    page,
-  }) => {
-    const EARLY_MS = 300;
-    const LATE_MS = 700;
-    await open(page, 'reset=1&house=12');
-    const away = await corner(page);
-    await solve(page);
-    await waitState(page, (s) => (s.beatMs ?? 0) >= EARLY_MS, '300 ms into the finale');
-    await page.mouse.click(away.x, away.y);
-    await frames(page, 3);
-    const early = await state(page);
-    expect(early?.phase).toBe('win');
-    expect(early?.beatMs ?? Infinity).toBeLessThan(WIN_BEAT_MS);
-    await waitState(page, (s) => (s.beatMs ?? 0) >= LATE_MS, '700 ms into the finale');
-    await page.mouse.click(away.x, away.y);
-    const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
-    // the second tap cut the beat short, after 700 ms; the first did not
-    expect(next.finale?.beatMs ?? 0).toBeGreaterThanOrEqual(LATE_MS);
-    expect(next.finale?.beatMs ?? Infinity).toBeLessThan(WIN_BEAT_MS - FRAME_SLACK_MS);
-    expect(LATE_MS).toBeGreaterThan(WIN_SKIP_FROM_MS);
-    expect(EARLY_MS).toBeLessThan(WIN_SKIP_FROM_MS);
-    expect([next.moves, next.hints]).toEqual([0, 0]);
-  });
-
-  for (const id of [1, 9, 17]) {
-    test(`house ${String(id)} shows its rule once, then input opens within 1.6 s (D70)`, async ({
-      page,
-    }) => {
-      await page.goto(`${TEST}?reset=1&house=${String(id)}${CANVAS}`, { waitUntil: 'load' });
-      const s = await waitState(page, (x) => x.scene === 'Game' && x.phase === 'play', 'play');
-      const script = demoFor(id, model(await house(page)));
-      if (!script) throw new Error(`no demonstration for house ${String(id)}`);
-      expect([s.shown, s.demos, s.demoSkipped]).toEqual([id, 1, false]);
-      const open = (s.playAt ?? Infinity) - (s.shownAt ?? 0);
-      expect(open).toBeLessThanOrEqual(DEMO_OPEN_MS);
-      expect(open).toBeGreaterThanOrEqual(script.ms - FRAME_SLACK_MS);
-      expect([s.moves, s.tally?.taps]).toEqual([0, 0]);
-      await settledEqualsRules(page);
-    });
-  }
-});
-
-test('a tap skips the demonstration and places nothing; the next tap plays (house 17, D70)', async ({
+test('a tap 300 ms into the finale does not skip it; one at 700 ms does (D73)', async ({
   page,
 }) => {
-  await page.goto(`${TEST}?reset=1&house=17${CANVAS}`, { waitUntil: 'load' });
+  const EARLY_MS = 300;
+  const LATE_MS = 700;
+  await open(page, 'reset=1&house=12');
+  const away = await corner(page);
+  await solve(page);
+  await waitState(page, (s) => (s.beatMs ?? 0) >= EARLY_MS, '300 ms into the finale');
+  await page.mouse.click(away.x, away.y);
+  await frames(page, 3);
+  const early = await state(page);
+  expect(early?.phase).toBe('win');
+  expect(early?.beatMs ?? Infinity).toBeLessThan(WIN_BEAT_MS);
+  await waitState(page, (s) => (s.beatMs ?? 0) >= LATE_MS, '700 ms into the finale');
+  await page.mouse.click(away.x, away.y);
+  const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
+  // the second tap cut the beat short, after 700 ms; the first did not
+  expect(next.finale?.beatMs ?? 0).toBeGreaterThanOrEqual(LATE_MS);
+  expect(next.finale?.beatMs ?? Infinity).toBeLessThan(WIN_BEAT_MS);
+  expect(LATE_MS).toBeGreaterThan(WIN_SKIP_FROM_MS);
+  expect(EARLY_MS).toBeLessThan(WIN_SKIP_FROM_MS);
+  expect([next.moves, next.hints]).toEqual([0, 0]);
+});
+
+for (const id of [1, 5, 8]) {
+  test(`house ${String(id)} shows its rule once as it appears, then input opens; nothing played (D70, D83)`, async ({
+    page,
+  }) => {
+    await page.goto(`${TEST}?reset=1&house=${String(id)}${CANVAS}`, { waitUntil: 'load' });
+    await waitState(page, (x) => x.scene === 'Game' && x.phase === 'demo', 'the demonstration');
+    const s = await waitState(page, (x) => x.phase === 'play', 'play');
+    expect([s.shown, s.demos, s.demoSkipped]).toEqual([id, 1, false]);
+    expect([s.moves, s.tally?.taps]).toEqual([0, 0]);
+    await settledEqualsRules(page);
+  });
+}
+
+test('a tap skips the demonstration and places nothing; the next tap plays (house 8, D70, D83)', async ({
+  page,
+}) => {
+  await page.goto(`${TEST}?reset=1&house=8${CANVAS}`, { waitUntil: 'load' });
   await waitState(page, (s) => s.scene === 'Game' && s.phase === 'demo', 'the demonstration');
   const h = await house(page);
   const free = freeCell(h);
+  await page.waitForTimeout(PAST_GUARD_MS);
   await tap(page, free);
   const s = await waitState(page, (x) => x.phase === 'play', 'play');
   expect(s.demoSkipped).toBe(true);
@@ -244,8 +213,8 @@ test('a tap skips the demonstration and places nothing; the next tap plays (hous
   expect((await settledEqualsRules(page)).ghosts.map(([c]) => c)).toContain(free);
 });
 
-test('a resumed house does not show its demonstration again (house 9, D70)', async ({ page }) => {
-  await open(page, 'reset=1&house=9');
+test('a resumed house does not show its demonstration again (house 5, D70)', async ({ page }) => {
+  await open(page, 'reset=1&house=5');
   expect((await state(page))?.demos).toBe(1);
   const free = freeCell(await house(page));
   await tap(page, free);
@@ -256,7 +225,7 @@ test('a resumed house does not show its demonstration again (house 9, D70)', asy
     (s) => s.scene === 'Game' && s.phase === 'play',
     'the house again',
   );
-  expect([back.shown, back.demos, back.moves]).toEqual([9, 0, 1]);
+  expect([back.shown, back.demos, back.moves]).toEqual([5, 0, 1]);
 });
 
 test('a drag carries a ghost to another room, one undo step; a refused drop puts it back (D72)', async ({
@@ -289,7 +258,7 @@ test('a drag carries a ghost to another room, one undo step; a refused drop puts
 test('a drag from an empty cell still paints marks, and one from a resident only nudges (D72)', async ({
   page,
 }) => {
-  await open(page, 'reset=1&house=9');
+  await open(page, 'reset=1&house=5');
   const h = await house(page);
   const m = model(h);
   const empty = emptyCells(h).filter((x) => !h.givens.includes(x));
@@ -325,7 +294,7 @@ test('the progress dots fill as the rooms settle and are all full when the house
   await expect
     .poll(async () => {
       const got = await page.evaluate(() => ({
-        phase: window.__ghostDebug?.state().phase,
+        phase: (window.__ghostDebug?.state() as { phase?: string } | undefined)?.phase,
         dots: window.__ghostDebug?.drawn?.()?.dots.length ?? 0,
       }));
       return got.phase === 'win' ? got.dots : -1;

@@ -2,7 +2,7 @@ import { expect, test as base, type APIRequestContext, type Page } from '@playwr
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { GhostDebugState } from '../../src/dev/debug';
+import type { GhostDebugState, NeutralState } from '../../src/dev/debug';
 
 /** Published path of the development-mode build (dev shortcuts, debug hooks). */
 export const TEST = 'test/';
@@ -48,6 +48,14 @@ export function collect(page: Page): Collected {
 export const TOUCHCANCEL_REPORT = /^error: Ignored attempt to cancel a touchcancel event/;
 
 /**
+ * Chrome's report when a page asks for WebGL with no GPU flags and gets software WebGL anyway:
+ * Phaser probes WebGL as it boots, on the Canvas renderer too. Only the timing tests, which run
+ * without the GPU flags (playwright.config.ts), allow it.
+ */
+export const SOFTWARE_WEBGL_REPORT =
+  /^warning: .*Automatic fallback to software WebGL has been deprecated/;
+
+/**
  * Every test gets the collector and ends with the same-origin (CLAUDE.md rule 1) and no-error
  * checks, so a stray request or console error fails whichever test caused it; `quietConsole`
  * names the few browser reports a test expects.
@@ -67,7 +75,30 @@ export const test = base.extend<{ guard: Collected; quietConsole: RegExp[] }>({
 });
 
 export function state(page: Page): Promise<GhostDebugState | undefined> {
-  return page.evaluate(() => window.__ghostDebug?.state());
+  return page.evaluate(() => window.__ghostDebug?.state() as GhostDebugState | undefined);
+}
+
+/** The state under `?playtest=1`: neutral fields only (D87). */
+export function neutralState(page: Page): Promise<NeutralState | undefined> {
+  return page.evaluate(() => window.__ghostDebug?.state() as NeutralState | undefined);
+}
+
+/** Polls the neutral state of `?playtest=1` until `pred` holds. */
+export async function waitNeutral(
+  page: Page,
+  pred: (s: NeutralState) => boolean,
+  label: string,
+  timeout = 40_000,
+): Promise<NeutralState> {
+  const t0 = Date.now();
+  for (;;) {
+    const s = await neutralState(page);
+    if (s && pred(s)) return s;
+    if (Date.now() - t0 > timeout) {
+      throw new Error(`timeout waiting for ${label}: ${JSON.stringify(s)}`);
+    }
+    await page.waitForTimeout(100);
+  }
 }
 
 /** Polls the dev state until `pred` holds (Phaser's clock lags headless, so poll, never sleep). */
@@ -117,6 +148,17 @@ export const DEV_ONLY = [
   'relocations',
   'shivers',
   'residents',
+  // the Game scene's dev state (round 1's code audit, DÜŞÜK 9): kept in DEV builds only
+  'lastFinale',
+  'slidAt',
+  'stepAt',
+  'slideStepMs',
+  'settlingAtHop',
+  'demos',
+  'shownAt',
+  'playAt',
+  'demoSkipped',
+  'builds',
 ];
 
 /** Text files the build ships; the third-party Bridge runtime is audited separately. */

@@ -1,5 +1,8 @@
 import {
   COLOR_FLOORS,
+  DOT_PATTERN_MARK,
+  HUE_STEP,
+  PATTERN_STEP_OF_ROOM,
   DOT_PATTERN_OFFSET,
   HATCH_EDGE_SHARE,
   HATCH_SHARE,
@@ -10,11 +13,12 @@ import {
 import type { HouseModel } from '../core/house';
 
 /**
- * The graybox look of a house (TASKS.md Epic 3; CLAUDE.md, Rendering; D71), pure so every house of
- * the game is checked: each room gets a floor of its own (a lightness level and a hue family) and
- * a wallpaper pattern. Neighbouring rooms differ in level and in pattern, so they never differ by
- * hue alone and the board reads as a floor plan, not as the coloured grid of other region
- * puzzles; walls run exactly between rooms.
+ * The graybox look of a house (TASKS.md Epic 3; CLAUDE.md, Rendering; D71, D85), pure so every
+ * house of the game is checked: each room gets a floor of its own (a lightness level and a hue
+ * family) and a wallpaper pattern. Neighbouring rooms differ in level, hue and pattern, so they
+ * never differ by hue alone and the board reads as a floor plan, not as the coloured grid of other
+ * region puzzles; up to eight rooms every room has a hue and a pattern of its own; walls run
+ * exactly between rooms.
  */
 
 /** Wallpaper patterns, drawn per cell so a room's pattern runs on from cell to cell (no plain floor). */
@@ -25,6 +29,8 @@ export const PATTERNS = [
   'antidiagonal',
   'diamonds',
   'checks',
+  'crosshatch',
+  'scales',
 ] as const;
 export type Pattern = (typeof PATTERNS)[number];
 
@@ -57,19 +63,23 @@ export function neighbourRooms(h: HouseModel): Set<number>[] {
   return out;
 }
 
+/** The rooms in order of falling degree, room id on ties: the most constrained first. */
+function byDegree(near: readonly Set<number>[]): number[] {
+  return [...Array(near.length).keys()].sort(
+    (a, b) => (near[b]?.size ?? 0) - (near[a]?.size ?? 0) || a - b,
+  );
+}
+
 /**
  * A proper colouring of the room graph with `k` colours, each used by at most `cap` rooms, by
  * backtracking over the rooms in order of falling degree (room id on ties); room r tries colour
- * r mod k first, so the looks spread out. Rooms on a grid form a planar graph; with at most 12
- * rooms (an 8 × 8 manor) four levels of three hues always fit (every house is tested).
+ * r mod k first, so the looks spread out. Null when there is none.
  */
-function colouring(near: readonly Set<number>[], k: number, cap = near.length): number[] {
+function colouring(near: readonly Set<number>[], k: number, cap: number): number[] | null {
   const rooms = near.length;
   const colour = new Array<number>(rooms).fill(-1);
   const used = new Array<number>(k).fill(0);
-  const order = [...Array(rooms).keys()].sort(
-    (a, b) => (near[b]?.size ?? 0) - (near[a]?.size ?? 0) || a - b,
-  );
+  const order = byDegree(near);
   const place = (at: number): boolean => {
     if (at === order.length) return true;
     const r = order[at] as number;
@@ -85,29 +95,87 @@ function colouring(near: readonly Set<number>[], k: number, cap = near.length): 
     }
     return false;
   };
-  if (!place(0)) throw new Error(`roomStyles: no colouring with ${String(k)} colours`);
-  return colour;
+  return place(0) ? colour : null;
 }
 
 /**
- * Each room's floor and pattern: the level by a colouring with at most HUES rooms per level, the
- * hue by the room's place among the rooms of its level (turned by the level, so the hues mix),
- * the pattern by a colouring of its own.
+ * Hues and patterns for rooms whose levels are set (D85), by backtracking in order of falling
+ * degree; room r tries hue r · HUE_STEP and pattern r · PATTERN_STEP_OF_ROOM first. Neighbours
+ * differ in hue and pattern. Up to HUES rooms no hue and no pattern repeats; above, a hue repeats
+ * only on rooms that do not touch and lie two levels apart or more, a pattern only with another
+ * hue, so no hue and pattern pair repeats. Null when there is no such choice.
  */
-export function roomStyles(h: HouseModel): RoomStyle[] {
+function huesAndPatterns(
+  near: readonly Set<number>[],
+  levels: readonly number[],
+): RoomStyle[] | null {
+  const rooms = near.length;
+  const hue = new Array<number>(rooms).fill(-1);
+  const pattern = new Array<number>(rooms).fill(-1);
+  const order = byDegree(near);
+  const fits = (x: number, hx: number, px: number): boolean => {
+    for (let y = 0; y < rooms; y++) {
+      if (y === x || hue[y] === -1) continue;
+      const sameHue = hue[y] === hx;
+      const samePattern = pattern[y] === px;
+      if (near[x]?.has(y)) {
+        if (sameHue || samePattern) return false;
+        continue;
+      }
+      const apart = Math.abs((levels[y] as number) - (levels[x] as number)) >= 2;
+      if (sameHue && (rooms <= HUES || !apart || samePattern)) return false;
+      if (samePattern && (rooms <= PATTERNS.length || sameHue)) return false;
+    }
+    return true;
+  };
+  const place = (at: number): boolean => {
+    if (at === order.length) return true;
+    const x = order[at] as number;
+    for (let j = 0; j < HUES; j++) {
+      const hx = (x * HUE_STEP + j) % HUES;
+      for (let q = 0; q < PATTERNS.length; q++) {
+        const px = (x * PATTERN_STEP_OF_ROOM + q) % PATTERNS.length;
+        if (!fits(x, hx, px)) continue;
+        hue[x] = hx;
+        pattern[x] = px;
+        if (place(at + 1)) return true;
+        hue[x] = -1;
+        pattern[x] = -1;
+      }
+    }
+    return false;
+  };
+  if (!place(0)) return null;
+  return levels.map((level, r) => ({
+    level,
+    hue: hue[r] as number,
+    pattern: PATTERNS[pattern[r] as number] as Pattern,
+  }));
+}
+
+/** Each house's styles, worked out once (a search that takes up to about 11 ms). */
+const STYLES = new WeakMap<HouseModel, readonly RoomStyle[]>();
+
+/**
+ * Each room's floor and pattern (D85): the level by a colouring that spreads the rooms evenly over
+ * the levels (or, where that cannot be, by any colouring), then the hues and the patterns. Worked
+ * out once per house: a board built again for a new screen size gets the same styles (round 2's
+ * code audit, DÜŞÜK 7).
+ */
+export function roomStyles(h: HouseModel): readonly RoomStyle[] {
+  const known = STYLES.get(h);
+  if (known) return known;
   const near = neighbourRooms(h);
-  const levels = colouring(near, LEVELS, HUES);
-  const patterns = colouring(near, PATTERNS.length);
-  const seen = new Array<number>(LEVELS).fill(0);
-  return levels.map((level, r) => {
-    const k = seen[level] as number;
-    seen[level] = k + 1;
-    return {
-      level,
-      hue: (k + level) % HUES,
-      pattern: PATTERNS[patterns[r] as number] as Pattern,
-    };
-  });
+  const rooms = near.length;
+  for (const cap of [Math.ceil(rooms / LEVELS), rooms]) {
+    const levels = colouring(near, LEVELS, cap);
+    const looks = levels ? huesAndPatterns(near, levels) : null;
+    if (looks) {
+      STYLES.set(h, looks);
+      return looks;
+    }
+  }
+  throw new Error(`roomStyles: no look for a house of ${String(rooms)} rooms`);
 }
 
 /** A straight wall from (x1, y1) to (x2, y2) in cell units (x to the right, y down). */
@@ -155,6 +223,43 @@ export function wallRuns(h: HouseModel): WallRun[] {
 
 /** A polygon in cell units: (0, 0) is a cell's top left corner, (1, 1) its bottom right. */
 export type Polygon = readonly (readonly [number, number])[];
+
+/**
+ * The part of a convex polygon inside the rectangle [x0, x1] × [y0, y1] (Sutherland–Hodgman), in
+ * the polygon's units; empty when none of it is inside.
+ */
+export function clipPolygon(p: Polygon, x0: number, y0: number, x1: number, y1: number): Polygon {
+  let poly: (readonly [number, number])[] = [...p];
+  const edge = (
+    inside: (q: readonly [number, number]) => boolean,
+    cut: (a: readonly [number, number], b: readonly [number, number]) => [number, number],
+  ): void => {
+    const out: (readonly [number, number])[] = [];
+    poly.forEach((a, k) => {
+      const b = poly[(k + 1) % poly.length] as readonly [number, number];
+      if (inside(a)) out.push(a);
+      if (inside(a) !== inside(b)) out.push(cut(a, b));
+    });
+    poly = out;
+  };
+  const atX =
+    (x: number) =>
+    (a: readonly [number, number], b: readonly [number, number]): [number, number] => [
+      x,
+      a[1] + ((x - a[0]) * (b[1] - a[1])) / (b[0] - a[0]),
+    ];
+  const atY =
+    (y: number) =>
+    (a: readonly [number, number], b: readonly [number, number]): [number, number] => [
+      a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1]),
+      y,
+    ];
+  edge((q) => q[0] >= x0, atX(x0));
+  edge((q) => q[0] <= x1, atX(x1));
+  edge((q) => q[1] >= y0, atY(y0));
+  edge((q) => q[1] <= y1, atY(y1));
+  return poly;
+}
 
 /** The area of a simple polygon (shoelace). */
 export function polygonArea(p: Polygon): number {
@@ -293,13 +398,23 @@ export interface Point {
   y: number;
 }
 
+/** A half ring open at the bottom (a scale of the wallpaper), its middle and radius. */
+export interface Arc {
+  x: number;
+  y: number;
+  r: number;
+}
+
 /**
- * A progress dot's wallpaper (D75), around its middle at radius `r`: two stripes as chords of the
- * dot, running the way the room's do (the floor's diagonal lines are u + v = d, its antidiagonal
- * ones v − u = d), or the points of its diamonds (four) or checks (two, staggered), each mark
- * DOT_PATTERN_MARK × r in size and wholly inside the dot.
+ * A progress dot's wallpaper (D75, D85), around its middle at radius `r`: two stripes as chords of
+ * the dot, running the way the room's do (the floor's diagonal lines are u + v = d, its
+ * antidiagonal ones v − u = d; crosshatch both), the points of its diamonds (four) or checks (two,
+ * staggered), or three scales, each mark DOT_PATTERN_MARK × r in size and wholly inside the dot.
  */
-export function swatchMarks(p: Pattern, r: number): { lines: Segment[]; points: Point[] } {
+export function swatchMarks(
+  p: Pattern,
+  r: number,
+): { lines: Segment[]; points: Point[]; arcs: Arc[] } {
   const o = DOT_PATTERN_OFFSET * r;
   const chord = (nx: number, ny: number, d: number): Segment => {
     // the chord at distance d from the middle along the normal (nx, ny), a unit vector
@@ -308,18 +423,24 @@ export function swatchMarks(p: Pattern, r: number): { lines: Segment[]; points: 
   };
   const both = (nx: number, ny: number): Segment[] => [chord(nx, ny, -o), chord(nx, ny, o)];
   const q = o / Math.SQRT2;
+  const none = { lines: [], points: [], arcs: [] };
   switch (p) {
     case 'vstripes':
-      return { lines: both(1, 0), points: [] };
+      return { ...none, lines: both(1, 0) };
     case 'hstripes':
-      return { lines: both(0, 1), points: [] };
+      return { ...none, lines: both(0, 1) };
     case 'diagonal':
-      return { lines: both(Math.SQRT1_2, Math.SQRT1_2), points: [] };
+      return { ...none, lines: both(Math.SQRT1_2, Math.SQRT1_2) };
     case 'antidiagonal':
-      return { lines: both(-Math.SQRT1_2, Math.SQRT1_2), points: [] };
+      return { ...none, lines: both(-Math.SQRT1_2, Math.SQRT1_2) };
+    case 'crosshatch':
+      return {
+        ...none,
+        lines: [...both(Math.SQRT1_2, Math.SQRT1_2), ...both(-Math.SQRT1_2, Math.SQRT1_2)],
+      };
     case 'diamonds':
       return {
-        lines: [],
+        ...none,
         points: [
           { x: -q, y: -q },
           { x: q, y: -q },
@@ -329,12 +450,23 @@ export function swatchMarks(p: Pattern, r: number): { lines: Segment[]; points: 
       };
     case 'checks':
       return {
-        lines: [],
+        ...none,
         points: [
           { x: -q, y: -q },
           { x: q, y: q },
         ],
       };
+    case 'scales': {
+      const s = Math.SQRT2 * DOT_PATTERN_MARK * r;
+      return {
+        ...none,
+        arcs: [
+          { x: -q, y: -q / 2, r: s },
+          { x: q, y: -q / 2, r: s },
+          { x: 0, y: q, r: s },
+        ],
+      };
+    }
   }
 }
 
@@ -387,4 +519,20 @@ export function clockText(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds));
   const m = Math.floor(whole / S_PER_MIN);
   return `${String(m)}:${String(whole - m * S_PER_MIN).padStart(2, '0')}`;
+}
+
+/**
+ * The solve time as it ticks in (D73, D85): new digits only when the whole second changes, so the
+ * text is set and drawn only then, not on every frame of the tick (round 2's code audit, DÜŞÜK 7).
+ */
+export class TickingTime {
+  private shown = -1;
+
+  /** The text for `seconds`, or null while the digits stay the same. */
+  next(seconds: number): string | null {
+    const whole = Math.max(0, Math.floor(seconds));
+    if (whole === this.shown) return null;
+    this.shown = whole;
+    return clockText(whole);
+  }
 }

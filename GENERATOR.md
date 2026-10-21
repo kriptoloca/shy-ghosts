@@ -31,7 +31,7 @@ interface House {
   n: number;          // 2..8 (9 until D69)
   rooms: string;      // n² chars, the room id of each cell in base 36 (canonical ids, §1.2)
   objects: string;    // n² chars: '.' empty, 'F' furniture, 'L' lamp
-  givens: number[];   // cell indices of the residents (houses 1–3, 9 and 17; D70)
+  givens: number[];   // cell indices of the residents (houses 1–3, 5 and 8; D70, D81)
   solution: number[]; // the cell index of the ghost of each room id
   grade: Grade;
   players: { naive: number; shallow: number }; // win rates (§5, added)
@@ -197,8 +197,9 @@ step also records the rooms and segments it used (the two-press hint shows them,
   carry difficulty (hard houses, cycle positions 1–9, manors, dailies) the house must also ask
   for **two kinds** (`insightKinds`, shape left out). Teach, rest and breather houses may repeat a
   kind; that is what makes them rests.
-- A house's **trick** = its insight kinds plus `block` when it has furniture and `light` when it
-  has a lamp (`trickOf`); consecutive teach houses (4–11, 17–19) must differ in it.
+- Since Gate B tune round 2 these rules hold from house 25 and in every daily; houses 4–24 follow
+  the ladder of §7, measured by the autopilot of §4.7 (D81). Round 1's "trick" rule for teach
+  houses is gone with it.
 - Fixtures (`tests/grade.test.ts`): §4.5's T2 fixture is a `shape`, the T3 one opens with two
   `count`s, the T4 one with `chain`s. Rooms `AAABB / AACBB / CCCDD / EECCD / EECDD`, objects
   `..... / F.... / ..... / ..F.. / L....`: room E's only cell (3,1) is placed, its column takes
@@ -208,6 +209,44 @@ step also records the rooms and segments it used (the two-press hint shows them,
   C's (1,3) along its column and (3,4) along its row: a `cross`. Rooms `AABB / ABBB / ACCB /
   CCDD`, a lamp at (0,2) and a block at (1,2): (3,0) sees all of A (lamp-made) and all of D (by
   its shape): the step is a `shape`.
+
+### 4.7 The autopilot (`src/gen/autopilot.ts`; Gate B tune round 2, D80)
+
+The grader names steps, but it has no technique for the budget a Queens or Star Battle player
+uses at a glance, so its count of insight episodes cannot tell a house that asks for something
+from one a fan finishes on autopilot. The autopilot plays only the one-look patterns, one per
+step, and stalls where a real insight is needed:
+
+| Pattern | Rule |
+| --- | --- |
+| single | a room with one free cell takes its ghost |
+| claim | a room whose free cells all lie in one row (or column) segment claims it: the other rooms' free cells there go (the grader's `shape`, `lamp` and `line` steps) |
+| budget | when a direction has exactly as many open segments as open rooms, every open segment holds a ghost: a segment with one free cell takes it (line single), a segment whose free cells all lie in one room holds that room's ghost (line claim) |
+
+The budget comes in three levels (`ApOptions.budget`): over whole lines only where no object
+splits a line (`lines`, the Queens rule), over segments (`segments-litblind`: a split line holds
+two, but a fully lit line still counts as one), and over segments leaving a fully lit line out
+(`segments`, the full autopilot `AP_FULL`). What it lacks are the real insights: a **count**
+(T3), a **cross** (a T2 step no claim explains: a cell that sees a whole room from two sides) and
+a **chain** (T4). Every pattern is sound, so on a house with a solution it never removes one of
+its cells.
+
+- `apProfile(p, maxTech)` runs the autopilot; where it stalls, the band's grader supplies the next
+  real step; the real steps between two placements form one **real insight episode**. It reports
+  the ghosts placed before the first stall (`opening`), how the first ghost came (`firstGhost`),
+  the stalls and their kinds.
+- `apOpening(p, opts)`: the ghosts an autopilot with these patterns places before it stalls.
+- `freebie(p)`: a **free opening**, a room with one free cell or a line single on the first look.
+- `openingOf(p, maxTech)`: how a house opens (`claim>single`, `free>line-single`, `count-row-2`,
+  `cross`, …).
+- The measure of docs/gate-b-round2.md §1.2 (`tests/round2.test.ts`): a house **teaches** when
+  the first autopilot level that finishes it, or a rule its solution needs (a shelf between two
+  solution ghosts; light needed; a solution ghost in a shelf's shadow; both lamps needed; three
+  ghosts in one line split twice), shows something no earlier house did; it **asks** when the full
+  autopilot stalls.
+- Calibration (`tests/autopilot.test.ts`, the list round 2 played kept as
+  `tests/fixtures/round2-houses.json`): it finishes houses 4–20 but 13 and 20, the two that player
+  had to stop and count.
 
 ## 5. Player models (`src/gen/players.ts`; D17)
 
@@ -252,14 +291,15 @@ at a house the players cannot read, and the build should stop and say so.
    second solution, so it breaks). Up to 50 moves (`UNIQUE_FIX_MOVES`; 200 until D77: in the
    successful candidates of houses 1–36 the fix needs at most 50 in about 99 % of cases, and
    those houses came out byte for byte the same), then reject the candidate.
-6. Residents (D70): in houses 9 and 17 the residents are chosen from the solution in reading
-   order (house 9: two in one line with a block between them; house 17: one unlit, beside a lit
-   cell), the first choice after which the house still asks for its insights; none fits: reject.
+6. Residents (D70, D81): in houses 5 and 8 the residents are chosen from the solution in reading
+   order (house 5: two in one line with a block between them; house 8: one unlit, beside a lit
+   cell), the first choice after which the house still asks for its band's d; none fits: reject.
 7. Grade it with the band's techniques and check the band's windows (§7) in a staged order,
    cheapest first: residents, grade, d, T3, episodes, insights (§4.6, from the same grader pass),
-   the manor's lead, the teaching tests (houses 4, 9, 17), the turn test (houses the list turns:
-   the same grade **and** the band's insights in all four turns, D78), object relevance (§6.1),
-   then the players (the costly part) last.
+   the manor's lead, the lesson tests (§7), the opening rules (§7, D81: the kind of opening the
+   band asks for, a cross where named, and an opening unlike the house before's), the turn test
+   (houses the list turns: the same grade **and** the band's insights in all four turns, D78),
+   object relevance (§6.1), then the players (the costly part) last.
 
 ### 6.1 Object relevance (`src/gen/relevance.ts`; D68)
 
@@ -286,23 +326,34 @@ houses 9–11 and 15–16 need several thousand under §4.6 and §6.1) fails the
 
 ## 7. Bands and selection windows (`src/gen/params.ts`)
 
-Brief §5.4 for houses 1–24; the cycles, the daily and the extra selection rules are this plan's
-(D6–D8, D10, D16), with Gate B's round-1 rules (D67–D70; docs/gate-b-round1.md §1.3). "Episode
-≥ 1" means at least one deduction episode (§4.3); "insight episodes" and "kinds" are §4.6's.
-Unless a row says otherwise every generated house from 10 asks for **2 insight episodes**, and
-every object of every house passes both tests of §6.1.
+Brief §5.4 for houses 1–24 as Gate B's tune rounds changed it: the ladder of round 2 (D80–D82;
+docs/gate-b-round2.md §1.3) for houses 4–24, round 1's rules (D67–D70) from house 25 and in the
+dailies; the cycles, the daily and the extra selection rules are this plan's (D6–D8, D10, D16).
+"Episode ≥ 1" means at least one deduction episode (§4.3); "insight episodes" and "kinds" are
+§4.6's; "opens with a real insight", "free opening" and the lessons are §4.7's. Every generated
+house from 25 asks for **2 insight episodes**, every house 5–24 opens differently from the house
+before it, and every object of every house passes both tests of §6.1.
 
 | Houses | Role | N | Rooms | Furniture | Lamps | Techniques | D window | Further rules |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1–3 | tutorial | 2, 3, 4 | N | 0 | 0 | T1 only | — | data (GDD §3.3) |
-| 4–8 | teach | 5 | 5 | 0 | 0 | ≤ T2 | 4–12 (6–8: 4–14) | house 4: only `shape` steps, lowest d of 50; 5: a `line`; 6: a `cross`; 7: 2 insight episodes of 2 kinds; 8: 2 insight episodes; 5–8: a trick other than the house before |
-| 9 | teach | 5 | 6 | 1–2 | 0 | ≤ T2 | 6–14 | 1 insight episode; two residents in one line with furniture between (A5's pair), lowest d of 50 |
-| 10–11 | teach | 6 (5 until D67) | 6–7 | 1–3 | 0 | ≤ T2 | 6–16 | 10: a `cross`; a trick other than the house before |
-| 12–14 | hard | 6 | 6–7 | 2–3 | 0 | T3 required | 14–24 | 2 kinds; naive ≤ 0.35 |
-| 15–16 | breather | 5 | 5–6 | 1–2 | 0 | ≤ T2 | 6–12 | — |
-| 17–19 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | house 17: the light is necessary (the lamp as furniture gives ≥ 2 solutions), a `lamp` line, one resident unlit beside the beam, lowest d of 50; 18–19: a trick other than the house before |
-| 20–22 | hard | 7 | 7–8 | 1–3 | 1–2 | T3 required | 18–30 | 2 kinds; naive ≤ 0.35 |
-| 23–24 | rest | 6 | 6 | 0–1 | 1 | ≤ T2 | 8–14 | — |
+| 4 | teach | 5 | 5 | 0 | 0 | ≤ T2 | 4–12 | the claim: its first step a T2, only `shape` steps; lowest d of 50 |
+| 5 | teach | 5 | 6 | 1–2 | 0 | ≤ T2 | 6–14 | the bookshelf: two residents in one line with furniture between (A5's pair); lowest d of 50 |
+| 6 | teach | 5 | 6 | 1–2 | 0 | ≤ T2 | 6–14 | the split budget: counting whole lines places no ghost, counting segments places one |
+| 7 | hard | 6 | 6 | 0–1 | 0 | T3 required | 12–24 | opens with a real insight (the first count, A3/A5); naive ≤ 0.35 |
+| 8 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | the light: necessary with its resident placed, no solution ghost in a shadow; one resident unlit beside the beam; no free opening; lowest d of 5 |
+| 9 | hard | 6 | 6–7 | 1–3 | 0 | T3 required | 12–24 | opens with a real insight; naive ≤ 0.35 |
+| 10 | teach | 5 | 5–6 | 1–2 | 1 | ≤ T2 | 6–14 | the shadow: a solution ghost past a shelf in the lamp's line; no free opening |
+| 11 | hard | 6 | 6–7 | 1–3 | 0–1 | T3 required | 12–24 | opens with a real insight; naive ≤ 0.35 |
+| 12 | hard | 6 | 6–7 | 2–3 | 0–1 | T3 required | 14–24 | opens with a cross; naive ≤ 0.35 |
+| 13–14 | hard | 6 | 6–7 | 2–3 | 0–1 | T3 required | 14–24 | open with a real insight; naive ≤ 0.35 |
+| 15 | breather | 5 | 5–6 | 1–2 | 0–1 | ≤ T2 | 6–12 | no free opening |
+| 16 | breather | 5 | 6–7 | 2–3 | 0 | ≤ T2 | 6–12 | three ghosts in one line split twice; no free opening |
+| 17 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | the lit-line budget: a line with no free cell; only the budget that leaves it out opens the house |
+| 18 | teach | 6 | 6 | 0–2 | 2 | ≤ T2 | 8–16 | two lamps, each one's light necessary; no free opening |
+| 19 | hard | 6 | 6–7 | 1–3 | 1 | T3 required | 14–24 | opens with a real insight; naive ≤ 0.35 |
+| 20–22 | hard | 7 | 7–8 | 1–3 | 1–2 | T3 required | 18–30 | open with a real insight; naive ≤ 0.35 |
+| 23–24 | rest | 6 | 6 | 0–1 | 1 | ≤ T2 | 8–14 | no free opening |
 | cycle positions 1–3 | cycle-low | 7 | 7–10 | 0–5 | 0–3 | ≤ T3 | [12 + 6r, 22 + 8r] | 2 kinds; naive ≤ 0.35 |
 | positions 4–9 | cycle-high | 7 or 8 | N to N+3 | 0–5 | 0–3 | T3 required | [18 + 8r, 32 + 10r] | 2 kinds; naive ≤ 0.35 |
 | position 10 | manor | 8 (9 until D69) | 9–12 | 1–6 | 0–3 | T3 required, ≤ 1 T4 step | [33 + 10r, 50 + 15r] | 2 kinds; d above every other house of its cycle; naive ≤ 0.25 |
@@ -327,6 +378,8 @@ every object of every house passes both tests of §6.1.
   house 1000, so the cycle phase runs on across every seam (house 1001 is position 9, like 506).
   The rules are symmetric, so the solution carries over; the houses the list turns (506–1000) are
   built to grade the same in all four quarter turns (D54), so the grade carries over too (tested).
+  The step names (`insights`, `insightEpisodes`) do not: a turn can name a step otherwise (267 of
+  the 1,485 turned houses), and no game code reads them, so a turned house carries none (D88).
 
 ## 8. Export and the build (`scripts/levels.mjs`)
 
@@ -345,7 +398,9 @@ every object of every house passes both tests of §6.1.
 - Measured: 120 s for the Epic 2 build; 448.8 s for Gate B round 1's prototype (a second grader
   pass for the insight names, a solver run per relevance test); the repository's round-1 build
   names the insights in the grader's own pass, decides relevance by the grader alone and moves at
-  most 50 borders per candidate (D77): see docs/PROGRESS.md for its time.
+  most 50 borders per candidate (D77): 207.0 s for `levels:check`. Gate B round 2's ladder
+  (§7, D81): `npm run levels` 204.7 s, `levels:check` 195.3 s (the plan's prototype 173 s; A8's
+  budget 600 s).
 
 ## 9. Gate A (closes Epic 2)
 
@@ -357,13 +412,19 @@ files it imports) over the built files; A9 is the auditor's. "Mid and late house
 | --- | --- | --- |
 | A1 | Unique solutions | every house 1–1000 and every daily has exactly one solution (solver stopped at 2), equal to the stored one; houses 1–3 with their givens: 1,792 of 1,792 |
 | A2 | No guessing at any band | the grader finishes every house within its band (§4.3): 1,792 of 1,792; no T4 outside manors, never more than one per manor |
-| A3 | Technique mix per band | houses 1–3: T1 only. Every generated house: ≥ 1 deduction episode. Teach, rest and breather houses: maxTech 2 (100 %). Hard houses, cycle positions 4–9 and manors: maxTech ≥ 3 (100 %). No T3 before house 12. Dailies: ≤ T3, T3 in ≥ 40 %. Reported: T3 share of positions 1–3, T4 share of manors |
+| A3 | Technique mix per band | houses 1–3: T1 only. Every generated house: ≥ 1 deduction episode. Teach, rest and breather houses: maxTech 2 (100 %). Hard houses, cycle positions 4–9 and manors: maxTech ≥ 3 (100 %). No T3 before house 7 (was 12; D82). Dailies: ≤ T3, T3 in ≥ 40 %. Reported: T3 share of positions 1–3, T4 share of manors |
 | A4 | Deduction depth curve (d) | every d inside its window. Teach easy → test hard → rest, as band medians: 4–8 < 12–14 > 15–16; 17–19 < 20–22 > 23–24; each cycle's breather below its positions 4–9 median. The 10-house moving average: MA(50) ≥ 1.4 × MA(13), and over houses 13–50 it never falls more than 6 below its running best. Every manor's d above every other house of its cycle (88 of 88). Rising per cycle to a cap: mean d of cycles 0–2 < cycles 4–6 < cycles 8–10, and every cycle from 10 on within ±15 % of the mean of cycles 10–87. (Only pairs whose windows cannot overlap are compared house band to house band: 20–22 and cycle 0 share most of their windows, and the prototype put cycle 0's positions 4–9 at a median of 22 against 26 for 20–22.) |
-| A5 | Tutorial teaches each rule in order | houses 1–3 equal the GDD §3.3 data, T1 only, one solution with the given (2, 4 and 9 without). House 1: (0,1) lies in room B and in the given's row. House 2: its path removes a candidate by the given's row and one by its column before the T1 steps that need them. House 3: three T1 steps, the first enabled by the given and each later one by the ghost placed just before. House 4: no given, furniture or lamp; its first step is T2. No furniture before house 9; house 9's solution has two ghosts in one row or column with furniture between them. No lamp before house 17; house 17's light is necessary (the lamp as furniture gives ≥ 2 solutions). First T3 at house 12; T4 first possible at house 34 |
+| A5 | Tutorial teaches each rule in order | houses 1–3 equal the GDD §3.3 data, T1 only, one solution with the given (2, 4 and 9 without). House 1: (0,1) lies in room B and in the given's row. House 2: its path removes a candidate by the given's row and one by its column before the T1 steps that need them. House 3: three T1 steps, the first enabled by the given and each later one by the ghost placed just before. House 4: no given, furniture or lamp; its first step is T2. No furniture before house 5; house 5's solution has two ghosts in one row or column with furniture between them (was house 9; D82). No lamp before house 8; house 8's light is necessary (the lamp as furniture gives ≥ 2 solutions, its resident placed; was house 17; D82). First T3 at house 7 (was 12; D82); T4 first possible at house 34 |
 | A6 | Estimated solve time per band (estSeconds, §4.4) | band medians: 4–11 ≤ 90 s; 12–14 ≤ 130 s; 15–16 ≤ 85 s; 17–19 ≤ 105 s; 20–22 ≤ 160 s; 23–24 ≤ 100 s; cycle positions 1–3 ≤ 150 s; 4–9 ≤ 200 s; manors ≤ 300 s; cycle breathers ≤ 100 s; dailies 120–200 s. Every house among 1–16 ≤ 130 s (Hold: a house won about every 2 minutes in the first session). The brief's human targets are reported next to these, not gated |
 | A7 | A naive player fails most mid and late houses | naive ≤ 0.35 on every hard house, cycle positions 1–9 and daily; ≤ 0.25 on every manor. Over all mid and late houses: mean naive ≤ 0.25, and naive < 0.5 on ≥ 90 % of them. Shallow ≤ 0.60 on every house whose grade uses T3, mean ≤ 0.40 over them. Blind ≤ 0.01 on every generated house. Teach, rest and breather houses: reported, not capped |
 | A8 | Reproducible, in budget | `npm run levels` ≤ 10 minutes on the CI runner; `levels:check` byte-identical; same seed → same house; 792 dailies on UTC dates 2026-11-01 … 2028-12-31; rotation after 1000 keeps one solution and the grade (the first ten turned houses, 1001–1010: houses 506–515 at 90° since D56) |
 | A9 | Independent re-measurement | the auditor's own segment code, solver and naive player, written from scratch outside the repository, agree with the files on 200 sampled houses (40 from each of: 4–24, positions 1–3, positions 4–9 with manors, breathers, dailies): uniqueness 200 of 200, naive win rates within ±0.07 |
+
+**Amendment** (D82, 2026-10-21): element positions moved earlier on playtest evidence (the
+autopilot bot); quality thresholds unchanged; approved by Hasan. The first shelf, the first count
+and the first lamp come at houses 5, 7 and 8 (were 9, 12 and 17), so the small houses can teach
+or ask for something (docs/gate-b-round2.md §0, §1.4). Every other clause and every threshold is
+unchanged.
 
 **Gate A passes** when A1–A9 hold, the epic's `code-review` and audit have no open KRİTİK or
 YÜKSEK finding, and PROGRESS.md records the measured table. A failing threshold is fixed through
@@ -421,6 +482,16 @@ prototype) and docs/PROGRESS.md, "Gate B tune round 1" (the repository's build):
 houses 5–9 each with a real insight, no two consecutive teach houses with one trick, no idle
 object by either test, no board above 8 × 8; Gate A's A1–A8 unchanged and green on the same
 files (`tests/round1.test.ts` and `tests/gate-a.test.ts`).
+
+### 10.2 Gate B tune round 2 (2026-10-21)
+
+The evidence for §4.7 and the ladder of §7 is in docs/gate-b-round2.md §0 and §1.5 (the
+prototype) and docs/PROGRESS.md, "Gate B tune round 2" (the repository's build, byte for byte the
+prototype's): no house 4–10 finished on autopilot with nothing new (round 2's list: 5 of 7);
+16 of houses 4–20 teach or ask (7); 8 open with a real insight (2); one free opening in houses
+11–20 (8 of 10), 17's lesson; no two houses in a row open alike (6 of 16 pairs); houses 25–1000
+and the dailies unchanged but daily 2027-10-02 (A9's fix, D88); Gate A A1–A8 green with the
+amendment of §9 (`tests/round2.test.ts`, `tests/gate-a.test.ts`).
 
 ## 11. Tests (Vitest)
 

@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseData } from '../src/core/house';
-import { buildLevels, gradeTurns, report, windowYield } from '../src/gen/build-levels';
+import { TUTORIAL_HOUSES } from '../src/data/tutorial';
+import {
+  buildLevels,
+  eachLightNeeded,
+  gradeTurns,
+  inShadow,
+  lightNeeded,
+  litLine,
+  opensRight,
+  report,
+  splitTwice,
+  windowYield,
+} from '../src/gen/build-levels';
 import { grade, insightEpisodes, type Grade } from '../src/gen/grade';
 import {
   CYCLE_PERIOD,
@@ -14,6 +26,7 @@ import {
   cycleOf,
 } from '../src/gen/params';
 import { baseOf } from '../src/gen/record';
+import { rowsHouse } from './support/houses';
 
 /**
  * The turn rule (D54): houses 501–1000 come back turned after house 1000 (D14), so each must
@@ -110,8 +123,8 @@ describe('the build report (GENERATOR.md §8)', () => {
       const misses = Object.values(s.misses).reduce((a, b) => a + b, 0);
       expect(misses + s.kept).toBe(s.tried);
     }
-    // house 4 keeps the lowest d among TEACH_POOL qualifying candidates; the others the first
-    expect(built.searches.map((s) => s.kept)).toEqual([TEACH_POOL, 1, 1]);
+    // houses 4 and 5 keep the lowest d among TEACH_POOL qualifying candidates; the daily the first
+    expect(built.searches.map((s) => s.kept)).toEqual([TEACH_POOL, TEACH_POOL, 1]);
   });
 
   it("records every house's insights, per episode, as the grader names them (D67)", () => {
@@ -136,12 +149,99 @@ describe('the build report (GENERATOR.md §8)', () => {
     const houses = built.searches.slice(0, 2);
     const y = windowYield(houses);
     expect(y.generated).toBeGreaterThan(0);
-    expect(y.inside).toBeGreaterThanOrEqual(TEACH_POOL + 1);
+    expect(y.inside).toBeGreaterThanOrEqual(2 * TEACH_POOL);
     const mean = (houses[0]!.tried + houses[1]!.tried) / 2;
     expect(lines[2]).toMatch(
       new RegExp(
         `^4–8: 2 \\| .* \\| ${mean.toFixed(1)} \\| ${(y.inside / y.generated).toFixed(2)}$`,
       ),
     );
+  });
+});
+
+describe('A9 (round 2): light is needed as the player meets the house, residents placed', () => {
+  it('a house whose resident pins the solution without light: lightNeeded is false', () => {
+    // one room of nine cells, lamps at (0,0) and (1,1), its resident at (2,2): with the lamps as
+    // furniture and no resident two solutions or more, but the resident leaves only its own
+    const h = parseHouse({
+      n: 3,
+      rooms: '000000000',
+      objects: 'L...L....',
+      givens: [8],
+      solution: [8],
+    });
+    expect(lightNeeded(h)).toBe(false);
+  });
+});
+
+/**
+ * The ladder's lesson tests and opening rules (Gate B round 2, D81): each lesson house of
+ * houses 4–24 passes its own test, and the houses open as their bands ask.
+ */
+describe('round 2: the lesson tests', () => {
+  const ROOMS4 = ['AABB', 'AABB', 'CCDD', 'CCDD'];
+
+  it("inShadow: a solution ghost past a shelf in a lamp's row or column", () => {
+    // the lamp at (0,0), a shelf at (0,2): (0,3) lies in its shadow, (0,1) in the light
+    const row = `L.F.${'.'.repeat(12)}`;
+    expect(inShadow(4, row, [3])).toBe(true);
+    expect(inShadow(4, row, [1])).toBe(false);
+    // down a column the same: the lamp at (0,0), a shelf at (2,0), the ghost at (3,0)
+    const col = `L.......F.......`;
+    expect(inShadow(4, col, [12])).toBe(true);
+    expect(inShadow(4, '.'.repeat(16), [3])).toBe(false);
+  });
+
+  it('splitTwice: three solution ghosts in a line that objects cut into three segments', () => {
+    const rooms = ['ABCDE', 'ABCDE', 'ABCDE', 'ABCDE', 'ABCDE'];
+    const objects = ['.F.F.', '.....', '.....', '.....', '.....'];
+    // the stand-ins of A, C and E are (0,0), (0,2) and (0,4): three ghosts in the cut row 0
+    const three = parseHouse(rowsHouse(rooms, objects));
+    expect(splitTwice(5, three, three.solution)).toBe(true);
+    // C's ghost on (1,2) instead: two in row 0, and the three in row 1 share one segment
+    const two = parseHouse(rowsHouse(rooms, objects, [[1, 2]]));
+    expect(splitTwice(5, two, two.solution)).toBe(false);
+  });
+
+  it('litLine: a row or a column with no free cell from the start', () => {
+    expect(litLine(parseHouse(rowsHouse(ROOMS4, ['L...', '....', '....', '....'])))).toBe(true);
+    // shelves stop the light along row 0 and column 0: (0,3) and (3,0) stay free
+    expect(litLine(parseHouse(rowsHouse(ROOMS4, ['L.F.', '....', 'F...', '....'])))).toBe(false);
+    expect(litLine(parseHouse(rowsHouse(ROOMS4)))).toBe(false);
+  });
+
+  it('eachLightNeeded: with any one lamp as furniture the house has two solutions or more', () => {
+    // the prototype's house 18: two lamps, each needed
+    const two: HouseData = {
+      n: 6,
+      rooms: '000000111120133122443222433322444552',
+      objects: '........F..L...........L..F.........',
+      givens: [],
+      solution: [2, 7, 28, 14, 24, 33],
+    };
+    expect(eachLightNeeded(parseHouse(two))).toBe(true);
+    // every ghost a resident: the solution needs no light
+    const pinned = { ...two, givens: [...two.solution].sort((a, b) => a - b) };
+    expect(eachLightNeeded(parseHouse(pinned))).toBe(false);
+  });
+
+  it('opensRight: an insight opening stalls before the first ghost; no-freebie has no free first move', () => {
+    // the prototype's house 7: the autopilot stalls at once and a count opens it
+    const count = parseHouse({
+      n: 6,
+      rooms: '011122001112300444335554333355333555',
+      objects: '....................................',
+      givens: [],
+      solution: [13, 8, 4, 24, 23, 33],
+    });
+    const hard = bandFor(7);
+    expect(hard.opening).toBe('insight');
+    expect(opensRight(count, hard)).toBe(true);
+    expect(opensRight(count, { ...hard, opening: 'no-freebie' })).toBe(true);
+    // tutorial house 1 opens with a room of one free cell
+    const free = parseHouse(TUTORIAL_HOUSES[0] as HouseData);
+    expect(opensRight(free, hard)).toBe(false);
+    expect(opensRight(free, { ...hard, opening: 'no-freebie' })).toBe(false);
+    expect(opensRight(free, { ...hard, opening: null })).toBe(true);
   });
 });

@@ -37,6 +37,8 @@ const FULL_TURN = Math.PI * 2;
  */
 export class Hud {
   private readonly buttons: Record<ButtonName, Button>;
+  /** The same buttons in a fixed list, so the per-frame checks allocate nothing. */
+  private readonly list: readonly Button[];
   private share = 0;
 
   constructor(
@@ -76,6 +78,7 @@ export class Hud {
       return b;
     };
     this.buttons = { undo: make('undo'), hint: make('hint') };
+    this.list = Object.values(this.buttons);
   }
 
   layoutTo(l: Layout): void {
@@ -112,10 +115,17 @@ export class Hud {
 
   /**
    * A press in hand will not count when it comes up: a platform pause, the win, a tap that skips
-   * the beat or ends the slide (so a press never reaches the next house; audit YÜKSEK 3).
+   * the beat or ends the slide (so a press never reaches the next house; audit YÜKSEK 3), a
+   * demonstration that plays again (round 2's code audit, ORTA 1).
    */
   cancelPress(): void {
-    for (const b of Object.values(this.buttons)) b.pressed = false;
+    for (const b of this.list) b.pressed = false;
+  }
+
+  /** A button is held down now (read every frame in play). */
+  get pressing(): boolean {
+    for (const b of this.list) if (b.pressed) return true;
+    return false;
   }
 
   /** The button's disc in design px (dev hooks). */

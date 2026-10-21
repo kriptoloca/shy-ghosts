@@ -1,6 +1,7 @@
 import type { HintExplain } from '../core/hint';
 import type { PlayEvent } from '../core/state';
 import type { DrawnState } from '../game/board';
+import type { MoveKind } from '../game/session';
 import type { ViewState } from '../game/view';
 
 /**
@@ -26,9 +27,11 @@ export interface GhostDebugState {
   beatMs?: number | null;
   /**
    * The last finale (D73): its beat on the scene's clock, from the solve to the slide (a tap may
-   * cut it short), and the whole of it on the wall clock, from the solve to the next house, in ms.
+   * cut it short), the whole of it on the wall clock, from the solve to the next house, and how
+   * far the clock moved in the frame the slide began, in ms; and how many ghosts still played a
+   * settle's motion when the ghosts began to hop (null without a hop).
    */
-  finale?: { beatMs: number; wallMs: number } | null;
+  finale?: { beatMs: number; wallMs: number; stepMs: number; settling: number | null } | null;
   /** Teaching demonstrations started since the Game began (D70; none on a resume). */
   demos?: number;
   /** The house on screen: when it appeared, and when its input opened (performance.now(), ms). */
@@ -70,6 +73,40 @@ export interface GhostDebugState {
   dimmed?: boolean;
   /** On the board on screen: effect drawings created, effects played (pooled: made < used). */
   effects?: { made: number; used: number };
+  /** The hint's reason is drawn on the board (D86). */
+  reasonShown?: boolean;
+  /** The solve time shown below the board (D85), or null. */
+  timeShown?: string | null;
+  /**
+   * The tween clock's scale: 0 during a platform pause and until its first step after (round 1's
+   * code audit, ORTA 3).
+   */
+  tweenScale?: number;
+}
+
+/**
+ * `state()` under `?playtest=1` (docs/gate-b-round2.md §6, D87): neutral fields only, so the blind
+ * playtester reads no rule, no mechanic and no state of play from the hooks (no word of
+ * tests/support/rule-words.ts).
+ */
+export interface NeutralState {
+  /** The house to play, and the house on screen. */
+  house: number;
+  shown: number;
+  /** Seconds of play in the house on screen. */
+  seconds: number;
+  paused: boolean;
+  /** A tap now acts on the board. */
+  input: 'open' | 'closed';
+  /** Taps and drags on the board, presses of the two buttons, in the house on screen. */
+  taps: number;
+  drags: number;
+  presses: { arrow: number; bulb: number };
+  /** Seconds until the bulb button answers again. */
+  bulbReadyIn: number;
+  arrangement: string;
+  n: number;
+  cell: number;
 }
 
 /** A pending hint's reason as the hooks show it (no cell for a placement under `?playtest=1`). */
@@ -77,10 +114,10 @@ export type DebugHintReason =
   | Extract<HintExplain, { kind: 'remove' }>
   | (Omit<Extract<HintExplain, { kind: 'place' }>, 'cell'> & { cell?: number });
 
-/** A house's board when it opened and every event list the scene played since. */
+/** A house's board when it opened and every event list the scene played since, with its kind. */
 export interface DebugRecord {
   start: ViewState;
-  moves: PlayEvent[][];
+  moves: { kind: MoveKind; events: PlayEvent[] }[];
 }
 
 /** A house as the hooks show it; no solution under `?playtest=1`. */
@@ -94,7 +131,8 @@ export interface DebugHouse {
 }
 
 export interface GhostDebug {
-  state: () => GhostDebugState;
+  /** The full dev state, or under `?playtest=1` the neutral one (D87). */
+  state: () => GhostDebugState | NeutralState;
   /** Plays a platform pause (true) or resume (false), as the host would (bridge.ts). */
   pause?: (paused: boolean) => void;
   /** The middle of a cell, in page px (for real taps). */
@@ -106,7 +144,11 @@ export interface GhostDebug {
   house?: () => DebugHouse;
   /** The board as a player sees it, as text (rooms, walls, objects, light, ghosts, marks). */
   visible?: () => string;
-  /** What the display draws, read back from its objects (null outside DEV builds). */
+  /**
+   * What the display draws, read back from its objects (null outside DEV builds). This hook and
+   * the three below state the rules: under `?playtest=1` they throw (round 2's code audit,
+   * DÜŞÜK 9).
+   */
   drawn?: () => DrawnState | null;
   /** What the rules hold now. */
   rules?: () => ViewState;

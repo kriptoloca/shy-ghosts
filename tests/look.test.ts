@@ -14,6 +14,8 @@ import {
   LEVELS,
   PATTERNS,
   brightCells,
+  clipPolygon,
+  TickingTime,
   clockText,
   dashes,
   dotsBetween,
@@ -29,10 +31,10 @@ import {
 import type { PlayHouse } from '../src/gen/record';
 
 /**
- * The graybox look (TASKS.md Epic 3; CLAUDE.md, Rendering; D71): every room of a house has a
- * floor colour of its own (a lightness level and a hue family), neighbouring rooms differ in
- * level and in wallpaper pattern, never by hue alone, every floor carries a pattern, and walls run
- * exactly between rooms.
+ * The graybox look (TASKS.md Epic 3; CLAUDE.md, Rendering; D71, D85): every room of a house has a
+ * floor colour of its own (a lightness level and a hue family) and a wallpaper pattern;
+ * neighbouring rooms differ in level, hue and pattern, never by hue alone; up to eight rooms every
+ * room has a hue and a pattern of its own; walls run exactly between rooms.
  */
 const read = <T>(name: string): T =>
   JSON.parse(readFileSync(new URL(`../src/data/${name}`, import.meta.url), 'utf8')) as T;
@@ -42,21 +44,23 @@ const HOUSES: HouseModel[] = [
   ...Object.values(read<Record<string, PlayHouse>>('dailies.json')).map((d) => parseHouse(d)),
 ];
 
-describe('roomStyles', () => {
-  it('neighbouring rooms differ in lightness level and in pattern, on every house of the game', () => {
+describe('roomStyles (D85)', () => {
+  const STYLES = HOUSES.map(roomStyles);
+
+  it('neighbouring rooms differ in lightness level, hue and pattern, on every house of the game', () => {
     const wrong: string[] = [];
     HOUSES.forEach((h, k) => {
-      const styles = roomStyles(h);
+      const styles = STYLES[k] ?? [];
       expect(styles).toHaveLength(h.roomCount);
       neighbourRooms(h).forEach((near, a) => {
         for (const b of near) {
           const sa = styles[a];
           const sb = styles[b];
           if (!sa || !sb) continue;
-          if (sa.level === sb.level)
-            wrong.push(`house #${String(k)}: rooms ${String(a)}, ${String(b)} level`);
-          if (sa.pattern === sb.pattern) {
-            wrong.push(`house #${String(k)}: rooms ${String(a)}, ${String(b)} pattern`);
+          for (const key of ['level', 'hue', 'pattern'] as const) {
+            if (sa[key] === sb[key]) {
+              wrong.push(`house #${String(k)}: rooms ${String(a)}, ${String(b)} ${key}`);
+            }
           }
         }
       });
@@ -64,10 +68,47 @@ describe('roomStyles', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('every room of a house has a floor colour of its own, and every floor a pattern', () => {
+  it('up to 8 rooms, every room has a hue and a pattern of its own (most of the game)', () => {
+    let small = 0;
     const wrong: string[] = [];
     HOUSES.forEach((h, k) => {
-      const styles = roomStyles(h);
+      if (h.roomCount > HUES) return;
+      small++;
+      const styles = STYLES[k] ?? [];
+      if (new Set(styles.map((s) => s.hue)).size !== styles.length) wrong.push(`#${String(k)} hue`);
+      if (new Set(styles.map((s) => s.pattern)).size !== styles.length) {
+        wrong.push(`#${String(k)} pattern`);
+      }
+    });
+    expect(wrong).toEqual([]);
+    expect(small / HOUSES.length).toBeGreaterThan(0.7);
+  });
+
+  it('from 9 rooms a hue repeats only on rooms that do not touch, two levels apart, and every hue and pattern pair is unique', () => {
+    let large = 0;
+    const wrong: string[] = [];
+    HOUSES.forEach((h, k) => {
+      if (h.roomCount <= HUES) return;
+      large++;
+      const styles = STYLES[k] ?? [];
+      const near = neighbourRooms(h);
+      styles.forEach((a, i) => {
+        styles.forEach((b, j) => {
+          if (j <= i || a.hue !== b.hue) return;
+          if (near[i]?.has(j) || Math.abs(a.level - b.level) < 2) {
+            wrong.push(`#${String(k)}: rooms ${String(i)}, ${String(j)} share a hue`);
+          }
+          if (a.pattern === b.pattern) wrong.push(`#${String(k)}: a hue and pattern twice`);
+        });
+      });
+    });
+    expect(wrong).toEqual([]);
+    expect(large).toBeGreaterThan(400);
+  });
+
+  it('every room of a house has a floor colour of its own; any two share a hue only two levels apart', () => {
+    const wrong: string[] = [];
+    STYLES.forEach((styles, k) => {
       const colours = new Set(styles.map((s) => `${String(s.level)}/${String(s.hue)}`));
       if (colours.size !== styles.length) wrong.push(`house #${String(k)}: a colour twice`);
       for (const s of styles) {
@@ -77,13 +118,21 @@ describe('roomStyles', () => {
       }
     });
     expect(wrong).toEqual([]);
-    expect(PATTERNS).toHaveLength(6);
+    expect([LEVELS, HUES]).toEqual([4, 8]);
+    expect(PATTERNS).toHaveLength(8);
+    expect(PATTERNS).toEqual(expect.arrayContaining(['crosshatch', 'scales']));
     expect(PATTERNS).not.toContain('plain');
-    expect(Math.max(...HOUSES.map((h) => h.roomCount))).toBeLessThanOrEqual(LEVELS * HUES);
   });
 
   it('is deterministic: the same house always looks the same', () => {
-    for (const h of HOUSES.slice(0, 50)) expect(roomStyles(h)).toEqual(roomStyles(h));
+    for (const d of read<PlayHouse[]>('levels.json').slice(0, 50)) {
+      expect(roomStyles(parseHouse(d))).toEqual(roomStyles(parseHouse(d)));
+    }
+  });
+
+  it("is worked out once per house: a board built again for a new screen size reuses it (round 2's code audit, DÜŞÜK 7)", () => {
+    const h = HOUSES[600] as HouseModel;
+    expect(roomStyles(h)).toBe(roomStyles(h));
   });
 });
 
@@ -184,7 +233,8 @@ describe("the progress dots, the hint's reason, dotted trails and dashes (D74, D
     const r = 22;
     for (const p of PATTERNS) {
       const m = swatchMarks(p, r);
-      expect(m.lines.length + m.points.length).toBeGreaterThanOrEqual(2);
+      expect(m.lines.length + m.points.length + m.arcs.length).toBeGreaterThanOrEqual(2);
+      for (const a of m.arcs) expect(Math.hypot(a.x, a.y) + a.r).toBeLessThan(r);
       // stripes are chords of the dot; points keep their whole mark inside it
       for (const [x1, y1, x2, y2] of m.lines) {
         expect(Math.hypot(x1, y1)).toBeCloseTo(r, 9);
@@ -208,6 +258,35 @@ describe("the progress dots, the hint's reason, dotted trails and dashes (D74, D
     expect(swatchMarks('diamonds', r).lines).toEqual([]);
     expect(swatchMarks('diamonds', r).points).toHaveLength(4);
     expect(swatchMarks('checks', r).points).toHaveLength(2);
+    // crosshatch: both diagonal ways; scales: half rings, no stripes
+    const cross = swatchMarks('crosshatch', r).lines;
+    expect(cross).toHaveLength(4);
+    expect(cross.filter(([x1, y1, x2, y2]) => Math.abs(x1 + y1 - (x2 + y2)) < 1e-9)).toHaveLength(
+      2,
+    );
+    expect(swatchMarks('scales', r).lines).toEqual([]);
+    expect(swatchMarks('scales', r).arcs).toHaveLength(3);
+  });
+
+  it('clipPolygon keeps the part of a polygon inside a rectangle', () => {
+    const square: Polygon = [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ];
+    expect(polygonArea(clipPolygon(square, 0.25, 0, 1, 0.5))).toBeCloseTo(0.375, 12);
+    expect(clipPolygon(square, 2, 2, 3, 3)).toEqual([]);
+    // a hatch band stays inside the clip and keeps its part of the area
+    const { stripes } = hatch();
+    for (const p of stripes) {
+      const c = clipPolygon(p, 0.1, 0.1, 0.9, 0.9);
+      for (const [x, y] of c) {
+        expect(x).toBeGreaterThanOrEqual(0.1 - 1e-12);
+        expect(y).toBeLessThanOrEqual(0.9 + 1e-12);
+      }
+      expect(polygonArea(c)).toBeLessThan(polygonArea(p));
+    }
   });
 
   it("the hint's reason keeps bright the segments, the rooms and the target room, nothing else", () => {
@@ -249,7 +328,23 @@ describe('no nursery wallpaper (CLAUDE.md rule 8; the design critique of round 1
   it('small diamonds instead of polka dots: dots on the palest rose read as a nursery', () => {
     expect(PATTERNS).toContain('diamonds');
     expect(PATTERNS as readonly string[]).not.toContain('dots');
-    expect(PATTERNS).toHaveLength(6);
+    expect(PATTERNS).toHaveLength(8);
+  });
+});
+
+describe("the solve time ticking in (round 2's code audit, DÜŞÜK 7)", () => {
+  it('gives new digits only when the whole second changes, so the text is drawn only then', () => {
+    const t = new TickingTime();
+    expect([0, 0.2, 0.9, 1, 1.5, 59.99, 61, 61.4].map((v) => t.next(v))).toEqual([
+      '0:00',
+      null,
+      null,
+      '0:01',
+      null,
+      '0:59',
+      '1:01',
+      null,
+    ]);
   });
 });
 

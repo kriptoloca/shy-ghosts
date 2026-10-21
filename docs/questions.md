@@ -487,8 +487,7 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
   px in every arrangement; this replaces "cells ≥ 80 design px at 9 × 9" (GDD §12). Walls
   clamp(0.09 × cell, 12, 18) design px (≥ 4 CSS px at 360 wide). Pace over depth: depth comes from
   the deductions (D67), not the area; the plan's recommendation to Hasan, who can overrule it.
-  CLAUDE.md rule 5 still says "Cells ≥ 80 design px at 9 × 9": flagged, not edited (no agent
-  message may change CLAUDE.md).
+  CLAUDE.md updated by the main session on 2026-10-21, approved by Hasan.
 - **D70 Teaching demonstrations and residents** (brief:36, the non-goal on givens; brief:155;
   plan §3). Houses 1, 2, 9 and 17 show their rule before input opens, from pure timelines
   (`src/game/demo.ts`; GDD §3.3): ≤ 1.5 s, a tap skips it and never counts, a resumed house
@@ -513,8 +512,8 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
 - **D72 Drag moves a ghost** (brief:79–81 made drags paint only; plan §5). A drag that starts on
   a placed ghost carries it: its own room → relocation, a room without a ghost → `moved`,
   anywhere else back with a nudge; one move, one undo step. A drag from an empty cell still
-  paints, one from a mark erases, one from a resident only nudges it. CLAUDE.md's input rule
-  does not mention it yet: flagged, not edited.
+  paints, one from a mark erases, one from a resident only nudges it. CLAUDE.md updated by the
+  main session on 2026-10-21, approved by Hasan.
 - **D73 Success outweighs failure on screen** (brief:135, brief:137; GDD §3a said ≤ 1.2 s for the
   win; plan §4). A settle bobs the ghost (scale 1.15, 8 px, 160 ms), draws the room's ring and
   fills its dot; the shiver is ±3 px, 60 ms, never repeated; the glance 250 ms; the finale about
@@ -549,6 +548,160 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
 - **D79 Dev builds keep wall-clock time** (helpers; D60). `?fpsmin=N` also turns Phaser's
   start-up cool-down off (`panicMax: 0`), so on a GPU-less machine timers keep wall-clock time
   from the first frame; the playtester's links already carry `fpsmin=1`. Production is unchanged.
+
+- **D80 The autopilot measure** (docs/gate-b-round2.md §1.1–§1.2; GENERATOR.md §4.7). A bot that
+  plays only the one-look patterns of a Queens or Star Battle player (a room with one free cell;
+  a room lying in one line claims it; the budget: when a direction has as many open lines as open
+  rooms, each line needs a ghost, at three levels: whole lines, split lines, lit lines left out)
+  says what a house asks for; a count, a cross or a chain is a real insight
+  (`src/gen/autopilot.ts`). Calibrated on the list round 2 played (`tests/fixtures/
+  round2-houses.json`): it finishes houses 4–20 but 13 and 20, the two its player had to stop
+  and count, and every house it finishes was rated 4 only where something was new. The grader's
+  own count of insight episodes (D67) missed this: it has no budget technique.
+- **D81 The ladder of houses 4–24** (plan §1.3; GENERATOR.md §7). Each house teaches one new
+  pattern or rule (4 the claim, 5 the bookshelf, 6 the split budget, 8 the light, 10 the
+  shadow, 16 three ghosts in a line split twice, 17 the lit-line budget, 18 two lamps, each
+  proved by its own test), or opens with a real insight (the hard houses 7, 9, 11–14, 19–22:
+  the autopilot places no ghost before it; 12 opens with a cross); 15 is the one rest of 4–20,
+  23–24 rest. No free opening after house 10 but 17's lesson (a line single); no two houses in
+  a row open alike. Measured (`tests/round2.test.ts`): no house 4–10 is finished on autopilot
+  with nothing new (round 2's list: 5 of 7); 16 of houses 4–20 teach or ask (round 2: 7);
+  8 open with a real insight (round 2: 2). Round 1's insight rules (D67: two insight episodes,
+  two kinds in hard bands, a new trick in teach houses) apply from house 25 and in the dailies;
+  on 4–24 the ladder's rules replace them, and the band fields `needInsight` and `newTrick`,
+  used by no band any more, are gone. House 8 keeps the lowest d among 5 qualifying candidates
+  (`LIGHT_POOL`; its light lesson, a resident beside the beam, no shadow and no free opening
+  leave few). The build equals the plan's prototype byte for byte (all four files); houses
+  25–1000 and the dailies are round 1's but daily 2027-10-02 (D88); `npm run levels` 204.7 s
+  (A8's budget 600 s).
+- **D82 Gate A: the first shelf, count and lamp come earlier** (plan §1.4; GENERATOR.md §9).
+  Element positions moved earlier on playtest evidence (the autopilot bot); quality thresholds
+  unchanged; approved by Hasan, 2026-10-21. A3: no T3 before house 7 (was 12). A5: no furniture
+  before house 5, which sets two ghosts in one line with furniture between (was 9); no lamp
+  before house 8, whose light is necessary with its resident placed (was 17); the first T3 at
+  house 7 (was 12). Every other clause and every threshold of A1–A9 is unchanged.
+- **D83 Demonstrations that cannot be missed** (plan §2; GDD §3.3, §3a). Houses 1 (sight, then
+  a see-through ghost on (0,1) and both cover their eyes, so (1,1) is a deduction, not a coin
+  flip), 2 (rows and columns), 3 (a see-through hand drags along the resident's row and marks
+  pop in), 5 (the bookshelf stops both trails), 8 (the light, a see-through copy squints in it)
+  and 10 (the light stops at the bookshelf; a see-through copy behind it stays calm, never on a
+  solution cell). Each plays as the house appears, before input opens, ends on an 800 ms hold
+  frame showing the whole lesson, lasts at most 2.3 s, and plays again after 5 s without input
+  until the house's first placement (house 3: its first mark), at most 3 times; a resume plays no
+  first one but the replays apply. A tap skips it and is never a game tap; in a first play a tap
+  in its first 300 ms does nothing at all (round 1's code audit, ORTA 2: a tap left over from the
+  finale skipped the next house's demonstration), counted from the frame after the one it started
+  in; a replay skips at once (round 2's code audit, DÜŞÜK 3: a tap 5.0–5.3 s after the last input
+  did nothing). A replay never starts while a finger or a button is down or a hint's reason
+  shows, input in hand is no idle time, and a replay ends whatever input was in hand (a carry, a
+  stroke, a press) as a platform pause does (round 2's code audit, YÜKSEK 1, ORTA 1: a replay
+  over a carried ghost left it drawn on the wrong cell). Beyond the plan: a demonstration ends at
+  once on a new screen size, after the slide has ended (DÜŞÜK 6).
+- **D84 Success louder than failure, measurably** (plan §3; GDD §3a). A settle: a white veil over
+  the room's whole floor (0.45 → 0, 300 ms), then the solid 6 px teal ring draws in (250 ms) and
+  stays; the ghost bobs (1.2×, 12 px, 220 ms) and keeps a content face (eyes closed in a smile);
+  the swatch pops (1.5×, 160 ms) and keeps a tick. A solve: about 2.4 s (hit stop 50 ms; the rooms
+  flash in reading order every min(110, 900 / R) ms, brighter each time, 0.3 → 0.6, each with a
+  rising tick, 1 → 1.6×, 4 px higher a room; a ring of light from the middle to the frame,
+  300 ms; the hop and the waves; the solve time below the board; the next house slides in at
+  2,050 ms; a tap skips from 600 ms). Deviations from the plan, recorded: a settle plays in three
+  beats, about 710 ms: the veil as the ghost pops in, the bob from the pop's end; the ring as the
+  veil fades (from 300 ms); then the ghost's small content pop (1.1×, 160 ms) with the swatch's
+  pop (from 550 ms). The face, the full swatch and its tick show from the first beat; only the
+  motion is sequenced. The solve's room lights stay on until the ring of light, then fade as the
+  next house comes. The conflict keeps the plan's ±3 px for 60 ms and the pose; three things in
+  it were not what the spec said and are fixed: the shiver played its 2 swings as 2 × 60 ms
+  (twice the 60 ms of D73 and §3a; the hint's tremble 240 ms for 4 × 30 ms; a red test in
+  `tests/motion.test.ts`); the line's double flash (D23) was drawn over a line already at full
+  strength, so it never showed and only made the frames flicker, and is gone (the line appears
+  and stays); a cooling room fades in 100 ms (D22 said 200). Every texture a settle or a solve
+  draws is made when the board is built, so none is drawn mid-motion. In houses 1 and 2 the
+  finale's ghosts hop while the last ghost still gives its content pop: the hop ends that first
+  (round 2's code audit, DÜŞÜK 4). The measure: the plan counts frames every 50 ms, a measure of
+  time, and a 50 ms timer reads a slower renderer's frame twice and calls the second read still.
+  The e2e (`tests/e2e/timing.spec.ts`) reads every drawn frame instead and counts each frame in
+  motion for as long as it stays on screen. The solve is scored on the beat alone, the frames
+  before 2,050 ms: over the whole finale the next house's slide passed the bars on its own (a
+  mutant whose beat showed nothing passed, 21.6× the area and 7.3× the time; round 2's code
+  audit, DÜŞÜK 5). Measured at 360 × 640 in the timing project (no GPU flags, frames 14–23 ms,
+  D89), four runs: changed area, settle 4.0–4.1× a conflict's (floor 3×), the beat 18.0–18.3×
+  (floor 10×); time in motion, settle 4.8–5.0× (floor 2×), the beat 10.8–11.6× (floor 6×). A
+  conflict moves for 150 ms, a settle 717–750 ms, the beat 1.6–1.7 s. The inversion test
+  (`tests/motion.test.ts`) holds the rows. Supersedes D22's 200 ms and D23's double flash.
+- **D85 Rooms: a hue and a pattern of their own; local contrast** (plan §4; CLAUDE.md
+  Rendering). 8 hue families × 4 lightness levels (L* 89/79/69/59, chroma 16–19; clay, sand,
+  olive, sage, teal, sky, lilac, rose) and 8 patterns (crosshatch and scales new). Neighbours
+  differ in level, hue and pattern; up to 8 rooms every room has a hue and a pattern of its own;
+  from 9 rooms a hue repeats only on rooms that do not touch, two levels apart, with no hue and
+  pattern pair twice (`roomStyles`, all 1,795 houses tested). A settled room keeps its floor (no
+  wash); the swatch keeps a tick; the solve time ticks in below the board, never over the
+  swatches (`timeBox`, every arrangement tested). Every floor F1–F7 holds (F1 4.84 in all three
+  views). Local contrast (round 1's code audit, DÜŞÜK 7): each ink now touches only its own
+  floor's colour: the wallpaper and the hatch stop 13 design px inside every wall (the ring and a
+  3 px halo each side fit there), nothing is printed on an object's cell, marks, dots and the
+  hatch's stripes carry a ring of their floor; the lowest local pairs are now the wall 4.84, the
+  ring 3.01, the sight line 3.56, a mark 3.66 and the hatch's edge 3.25 (were 1.39 for a wall on
+  the hatch's edge, 1.91 for the ring on the wallpaper's ink, 2.39 and 1.06 for a mark on the ink
+  and on the hatch's edge, 2.28 for the sight line). Nothing that stays on the board is a
+  Graphics object any more (ORTA 4): floors and walls are textures drawn once, rings, flashes
+  and veils a one-colour texture scaled, dots and marks textures per floor colour, the
+  swatches baked. Measured on WebGL (SwiftShader, house 20 at rest mid-play, 240 frames): 0.22 MB
+  of garbage a frame by the sampling heap profiler, 0.21 MB by heap growth (round 1's build 1.42
+  and 0.92; `4e40bd2` 0.35–0.43); about half of what is left is the two HUD buttons' Graphics,
+  which ORTA 4 did not cover.
+- **D86 The hint's reason stays until the next move** (plan §5; GDD §3a). The first press shows
+  it as before (D74); it stays, pulsing, until the player's next move (a tap, a drag, a stroke,
+  an undo), which takes it away and acts as usual, or the second press, which does the step; a
+  pause freezes it; a new screen size keeps it. Deviation from D74, recorded: a stroke of marks
+  now ends a pending hint too (it was kept until a move to a ghost). A move takes the reason away
+  whenever one is pending, however little of it shows (round 2's code audit, DÜŞÜK 2: house
+  141's first reason dims no cell, and a move before its pulse's first frame left it pulsing).
+- **D87 A neutral `state()`; colour words tied to their colours** (plan §6, §4 "B2 detail").
+  Under `?playtest=1` `state()` holds only the house to play and on screen, seconds, paused,
+  input (open or closed), taps, drags, presses (arrow, bulb), bulbReadyIn, arrangement, n and
+  cell: no word of `RULE_WORDS` or of the mechanics (placement, removal, relocation, carried,
+  nudge, stroke, mark, erase, shiver, demo, finale, undo, conflict, solved), and the hooks that
+  state the rules, `rules()`, `drawn()`, `events()` and `previous()`, throw (round 2's code
+  audit, DÜŞÜK 9). `visible()` names the settled ring and the swatch's ring teal, the content
+  face "eyes closed in a smile", and a test ties each colour word (dark, yellow, teal, warm) to
+  the constants it names.
+- **D88 A9's three fixes** (plan §7; the auditor's Gate A re-run). A see-through block stays a
+  block for the step names and the time estimate, so a step renamed only by its cell no longer
+  passes an idle block (the rebuild changed one stored house, daily 2027-10-02); `lightNeeded`
+  solves with the residents placed (now house 8's); a turned house after 1000 does not carry the
+  base house's step names. Corrected after round 2's code audit (ORTA 2, DÜŞÜK 8): round 2 first
+  named the turned house's steps with its own grade (`turnedHouse`), kept out of `houseAt` on the
+  claim that the game bundle must not carry the grader. It carries it anyway: `src/core/hint.ts`
+  grades the board for the live two-press hint (D74), and it stays (the first download is
+  1.72 MB of 5). What the smoke e2e caught when `houseAt` graded was the dev-only word
+  `residents`, a field of the band defaults in `src/gen/params.ts` that `bandFor` pulled into the
+  bundle (4.1 KB more), not the grader. No game code reads the stored step names, so `houseAt` now
+  leaves them out past house 1000 (267 of the 1,485 turned houses would name a step otherwise),
+  and `turnedHouse`, which only a test used, is gone.
+- **D89 The round-1 code audit's other findings** (0 KRİTİK, 0 YÜKSEK). ORTA 3: Phaser's tween
+  clock credits up to 500 ms of a pause on the resume, so the tween clock runs at timeScale 0
+  from the pause to its first step after (pauses of 300, 450 and 800 ms tested). ORTA 5: no
+  e2e test is retried and a flaky one fails the run; the wall-clock tests run in a project of
+  their own, one at a time, after the others; the measured beat (`slidAt`) is read when the
+  slide begins. DÜŞÜK 8: the model screen accepts a nudge of a placed ghost only in a drag, and
+  the dev log records each move's kind. DÜŞÜK 9: the scene's dev state lives inside
+  `import.meta.env.DEV` and the production bundle check lists it. Deviation, recorded:
+  `slidAt` is the beat on the scene's clock less what a tap skipped, so a tapped finale still
+  records the tap's moment. The finale's beat is held to |beat − 2,050 ms| ≤ 50 ms, round 1's
+  bound (`bfd2b96`): round 2 first swapped it for two assertions that could not fail (round 2's
+  code audit, KRİTİK 1), and those are gone. Under the SwiftShader flags a frame took 54–137 ms and
+  the bound failed (123 ms past in one of four runs), so the timing project runs without the GPU
+  flags (Canvas renderer; frames 14–23 ms; Chrome's software-WebGL warning, from Phaser's WebGL
+  probe at boot, is allowed in that project only). The clock's step in the frame the slide began
+  is logged (`stepMs`), not asserted.
+- **D90 Round 2's code audit** (1 KRİTİK, 1 YÜKSEK, 2 ORTA, 10 DÜŞÜK; every one fixed, each test
+  seen failing first; the table in docs/PROGRESS.md). Decided with the coordinator: the finale's
+  beat keeps round 1's 50 ms bound and the timing project runs without the GPU flags (D89); the
+  grader stays in the game bundle for the hint (D88); the HUD's two button Graphics, about half
+  of the 0.22 MB of garbage a frame that is left (D85), wait for Epic 4's art. No gate threshold,
+  floor or test tolerance moved. The auditor's A9 re-run passed Gate A on the new files (1,792 of
+  1,792; its three findings closed, D88). Watched: house 5's blind win rate, 0.0078 against A7's
+  cap of 0.01, the only generated house above 0.004.
 
 ## Open questions (defaults in force)
 

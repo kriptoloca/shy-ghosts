@@ -76,7 +76,6 @@ describe('the board draws only with the palette tests/contrast.test.ts holds to 
     'COLOR_WALL',
     'COLOR_HATCH',
     'COLOR_HATCH_EDGE',
-    'COLOR_SETTLED_WASH',
     'COLOR_SETTLED_RING',
     'COLOR_SEEN_LINE',
     'COLOR_GLANCE',
@@ -95,22 +94,23 @@ describe('the board draws only with the palette tests/contrast.test.ts holds to 
 
   it('board.ts draws the floors, walls, hatch, settled cue, marks and lines with the tested colours', () => {
     const used = colours('src/game/board.ts');
-    // the solved frame and the win's room flashes are feedback over a finished house
-    expect(used.filter((c) => !TESTED.includes(c) && c !== 'COLOR_SOLVED_FRAME')).toEqual([]);
+    // feedback, not a state: the solved frame and the win's room flashes over a finished house,
+    // the white veil of a settle; the solve time stands on the dark page below the board
+    const feedback = ['COLOR_SOLVED_FRAME', 'COLOR_SETTLE_VEIL', 'COLOR_WIN_DIGITS'];
+    expect(used.filter((c) => !TESTED.includes(c) && !feedback.includes(c))).toEqual([]);
     for (const c of TESTED.slice(0, 9)) expect(used).toContain(c);
   });
 
   it('the progress dots, the demonstrations and the hint reason draw on the floors with tested colours', () => {
-    // dots: swatches of the floors and their wallpaper, the settled ring; their rim and the
-    // solve-time digits stand on the dark page, not on a floor
+    // dots: swatches of the floors and their wallpaper, the settled ring; their rim stands on
+    // the dark page, not on a floor
     expect(colours('src/game/dots.ts').filter((c) => !TESTED.includes(c))).toEqual([
       'COLOR_DOT_RIM',
-      'COLOR_WIN_DIGITS',
     ]);
     // demonstrations: the glance's dotted trails and the lamp's light
     expect(colours('src/game/demo-play.ts').filter((c) => !TESTED.includes(c))).toEqual([]);
     // the reason: a wrong ghost's outline in the marks' ink; the veil (the page colour) and the
-    // pulse only dim or lighten a floor for HINT_REASON_MS
+    // pulse only dim or lighten a floor until the next move
     expect(
       colours('src/game/reason.ts')
         .filter((c) => !TESTED.includes(c))
@@ -124,9 +124,36 @@ describe('the board draws only with the palette tests/contrast.test.ts holds to 
     for (const c of ['COLOR_MARK', 'COLOR_FURNITURE_EDGE', 'COLOR_LAMP_EDGE', 'COLOR_HATCH']) {
       expect(used).toContain(c);
     }
-    // the rest belongs to the ghosts, the nightcap and the books: never drawn on a floor
+    // the rest belongs to the ghosts, the nightcap and the books (never drawn on a floor), and to
+    // the finale's warm tick and ring of light (feedback over a finished house)
     expect(
-      used.filter((c) => !TESTED.includes(c) && !/^COLOR_(GHOST|CAP|SHELF|BOOKS)/.test(c)),
+      used.filter(
+        (c) =>
+          !TESTED.includes(c) &&
+          !/^COLOR_(GHOST|CAP|SHELF|BOOKS)/.test(c) &&
+          c !== 'COLOR_SOLVED_FRAME',
+      ),
     ).toEqual([]);
+  });
+});
+
+describe('the e2e retries nothing and fails on a flaky test (the round-1 code audit, ORTA 5)', () => {
+  const config = code('playwright.config.ts');
+  const specs = readdirSync(new URL('../tests/e2e', import.meta.url))
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => code(`tests/e2e/${f}`));
+
+  it('no retries anywhere, no per-test or per-describe retries in any spec', () => {
+    expect(config).toMatch(/\bretries: 0,/);
+    expect(config.match(/\bretries:/g)).toHaveLength(1);
+    expect(config).toMatch(/\bfailOnFlakyTests: true,/);
+    for (const s of specs) expect(s).not.toMatch(/\bretries\b/);
+  });
+
+  it('the wall-clock tests run alone, one at a time, after all the others', () => {
+    expect(config).toMatch(/testIgnore: \/timing\\\.spec\\\.ts\$\//);
+    expect(config).toMatch(/testMatch: \/timing\\\.spec\\\.ts\$\//);
+    expect(config).toMatch(/dependencies: \[''\]/);
+    expect(config).toMatch(/workers: 1,\s*\}/);
   });
 });

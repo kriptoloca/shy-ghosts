@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseData } from '../src/core/house';
 import { PlayState, type PlayEvent } from '../src/core/state';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
+import type { MoveKind } from '../src/game/session';
 import { Screen, view } from './support/screen';
 
 /**
@@ -15,11 +16,12 @@ function problemsOf(
   setup: (s: PlayState) => void,
   corrupt: (ev: PlayEvent[]) => PlayEvent[],
   move: (s: PlayState) => PlayEvent[],
+  kind: MoveKind = 'tap',
 ): string[] {
   const s = new PlayState(H3);
   setup(s);
   const screen = new Screen(H3, view(s));
-  screen.play(corrupt(move(s)));
+  screen.play(corrupt(move(s)), kind);
   return screen.problems;
 }
 
@@ -102,6 +104,23 @@ describe('the model screen is strict', () => {
         () => undefined,
         same,
         (s) => s.tap(5),
+      ),
+    ).toEqual([]);
+  });
+
+  it('a placed ghost nudges only in a drag (a refused drop goes back), never on a tap (DÜŞÜK 8)', () => {
+    // the ghost at (1,0) carried onto the given at (0,3): refused, it goes back with a nudge
+    const refused = (s: PlayState): PlayEvent[] => s.drag(4, 3);
+    expect(problemsOf((s) => s.tap(4), same, refused, 'drag')).toEqual([]);
+    const asTap = problemsOf((s) => s.tap(4), same, refused, 'tap');
+    expect(flags(asTap, 'the ghost at 4 nudged in a tap, not a drag')).toBe(true);
+    // a given or a block nudges on a tap
+    expect(
+      problemsOf(
+        () => undefined,
+        same,
+        (s) => s.tap(3),
+        'tap',
       ),
     ).toEqual([]);
   });

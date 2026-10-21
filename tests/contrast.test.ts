@@ -12,12 +12,19 @@ import {
   COLOR_MARK,
   COLOR_SEEN_LINE,
   COLOR_SETTLED_RING,
-  COLOR_SETTLED_WASH,
   COLOR_WALL,
   DOT_EMPTY_ALPHA,
+  DOT_HALO,
+  FLOOR_MARGIN,
   HATCH_EDGE_SHARE,
+  HATCH_HALO,
   HATCH_SHARE,
-  SETTLED_WASH_ALPHA,
+  MARK_HALO,
+  MARK_SHARE,
+  RING_HALO,
+  RING_INSET,
+  RING_WIDTH,
+  SEEN_DOT,
 } from '../src/config';
 import {
   chroma,
@@ -34,41 +41,51 @@ import {
 } from './support/colour';
 
 /**
- * The readability floors of the graybox palette (Gate B tune round 1, docs/gate-b-round1.md §2.2;
- * D71), each over every colour pair it names: F1 walls, F2 neighbouring rooms, unique room
- * colours, F3 the settled cue, F4 marks, F5 the light cue, F6 every line and outline drawn on the
- * floors, F7 not a nursery palette. Contrast is the WCAG 2 ratio (luminance only, so it is also
- * the grayscale reading); ΔE00 is CIEDE2000; a deuteranope is simulated (Machado et al. 2009). A
- * cell is read as the average of what covers it: a lit cell is its floor under the amber hatch
- * (HATCH_SHARE of its area) and the hatch's outline (HATCH_EDGE_SHARE); a settled room's floor
- * lies under the teal wash; a lit cell of a settled room has both.
+ * The readability floors of the graybox palette (Gate B tune rounds 1 and 2, docs/gate-b-round1.md
+ * §2.2, docs/gate-b-round2.md §4; D71, D85), each over every colour pair it names: F1 walls, F2
+ * neighbouring rooms, unique room colours, F3 the settled cue, F4 marks, F5 the light cue, F6
+ * every line and outline drawn on the floors, F7 not a nursery palette. Contrast is the WCAG 2
+ * ratio (luminance only, so it is also the grayscale reading); ΔE00 is CIEDE2000; a deuteranope is
+ * simulated (Machado et al. 2009). A cell is read as the average of what covers it: a lit cell is
+ * its floor under the amber hatch (HATCH_SHARE of its area) and the hatch's outline
+ * (HATCH_EDGE_SHARE). A settled room keeps its floor (no wash, D85). Locally, every ink touches
+ * only its own floor's colour (the last block below; round 1's code audit, DÜŞÜK 7).
  */
 const FLOORS: Rgb[][] = COLOR_FLOORS.map((row) => row.map(rgb));
 const ALL = FLOORS.flat();
 const wall = rgb(COLOR_WALL);
 const hatch = rgb(COLOR_HATCH);
 const edge = rgb(COLOR_HATCH_EDGE);
-const wash = rgb(COLOR_SETTLED_WASH);
 const ring = rgb(COLOR_SETTLED_RING);
 const lit = (f: Rgb): Rgb => mix(mix(f, hatch, HATCH_SHARE), edge, HATCH_EDGE_SHARE);
-const settled = (f: Rgb): Rgb => mix(f, wash, SETTLED_WASH_ALPHA);
-/** Every state a floor is seen in: plain, lit, settled, lit in a settled room. */
-const STATES: Rgb[] = ALL.flatMap((f) => [f, lit(f), settled(f), lit(settled(f))]);
-/** Pairs of rooms that may touch: the 4-colouring puts neighbours on different levels. */
-const NEIGHBOURS: [Rgb, Rgb][] = FLOORS.flatMap((row, l) =>
-  l + 1 < FLOORS.length
-    ? FLOORS.slice(l + 1).flatMap((other) =>
-        row.flatMap((a) => other.map((b) => [a, b] as [Rgb, Rgb])),
-      )
-    : [],
+/** Every state a floor is seen in: plain or lit. */
+const STATES: Rgb[] = ALL.flatMap((f) => [f, lit(f)]);
+/** A floor by its level and hue family. */
+interface Floor {
+  level: number;
+  hue: number;
+  rgb: Rgb;
+}
+const FLOOR_LIST: Floor[] = FLOORS.flatMap((row, level) =>
+  row.map((c, hue) => ({ level, hue, rgb: c })),
 );
+/** Pairs of rooms that may touch (src/game/look.ts): neighbours differ in level and in hue. */
+const NEIGHBOURS: [Rgb, Rgb][] = FLOOR_LIST.flatMap((a) =>
+  FLOOR_LIST.filter((b) => b.level > a.level && b.hue !== a.hue).map(
+    (b) => [a.rgb, b.rgb] as [Rgb, Rgb],
+  ),
+);
+/** Two rooms may share a house unless they share a hue less than two levels apart (look.ts). */
+const together = (a: Floor, b: Floor): boolean =>
+  a !== b && (a.hue !== b.hue || Math.abs(a.level - b.level) >= 2);
 const min = (v: readonly number[]): number => Math.min(...v);
-/** For each floor: how much closer `seen(f)` stays to f than to any other floor (ΔE00). */
+/** For each floor: how much closer `seen(f)` stays to f than to any floor it may share a house with (ΔE00). */
 const ownMargin = (seen: (f: Rgb) => Rgb): number =>
   min(
-    ALL.map((f) => {
-      const s = seen(f);
-      return min(ALL.filter((g) => g !== f).map((g) => deltaE00(s, g))) - deltaE00(s, f);
+    FLOOR_LIST.map((f) => {
+      const s = seen(f.rgb);
+      const others = FLOOR_LIST.filter((g) => together(f, g)).map((g) => deltaE00(s, g.rgb));
+      return min(others) - deltaE00(s, f.rgb);
     }),
   );
 
@@ -110,13 +127,13 @@ describe('the palette floors (D71)', () => {
     ).toBeGreaterThanOrEqual(6);
   });
 
-  it('every room of a house has a colour of its own: any two floors ΔE00 ≥ 7', () => {
+  it('every room of a house has a colour of its own: any two floors that may share a house ΔE00 ≥ 7', () => {
     const d: number[] = [];
-    ALL.forEach((a, i) => {
-      for (const b of ALL.slice(i + 1)) d.push(deltaE00(a, b));
+    FLOOR_LIST.forEach((a, i) => {
+      for (const b of FLOOR_LIST.slice(i + 1)) if (together(a, b)) d.push(deltaE00(a.rgb, b.rgb));
     });
     expect(min(d)).toBeGreaterThanOrEqual(7);
-    expect(ALL).toHaveLength(12);
+    expect(ALL).toHaveLength(32);
   });
 
   it('F3: the settled ring ≥ 3:1 against every floor state, in normal vision, grayscale and deuteranope', () => {
@@ -125,8 +142,7 @@ describe('the palette floors (D71)', () => {
     }
   });
 
-  it('F3: a settled room stays closest to its own colour; the settled and the light cue differ in hue', () => {
-    expect(ownMargin(settled)).toBeGreaterThanOrEqual(0.5);
+  it('F3: the settled and the light cue differ in hue', () => {
     // teal against amber, a third of the colour wheel apart and more
     const apart = Math.abs(hueAngle(ring) - hueAngle(hatch));
     expect(Math.min(apart, 360 - apart)).toBeGreaterThanOrEqual(90);
@@ -155,6 +171,9 @@ describe('the palette floors (D71)', () => {
   });
 
   it('F7: a muted palette, not a nursery one: floor chroma ≤ 20; every floor has a darker wallpaper ink', () => {
+    expect(COLOR_FLOOR_INKS.map((row) => row.length)).toEqual(
+      COLOR_FLOORS.map((row) => row.length),
+    );
     expect(Math.max(...ALL.map(chroma))).toBeLessThanOrEqual(20);
     const inks = COLOR_FLOOR_INKS.flat().map(rgb);
     expect(inks).toHaveLength(ALL.length);
@@ -187,5 +206,57 @@ describe('the palette, reported (no floor of its own)', () => {
     const w = min(inks.map((i) => contrast(wall, i)));
     console.log(`walls against the darkest wallpaper ink: ${w.toFixed(2)}:1`);
     expect(w).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * Local contrast (round 1's code audit, DÜŞÜK 7; D85): each ink against the colours it actually touches.
+ * The board draws it so that every ink touches only its own floor's colour: the wallpaper and the
+ * hatch stop FLOOR_MARGIN inside every wall, room enough for the settled ring with RING_HALO of
+ * plain floor on each side; marks, sight dots and glances carry a ring of their floor's colour;
+ * the hatch's stripes a band of it; nothing is printed on a bookshelf's or a lamp's cell. So the
+ * floors F1, F3, F4, F5 and F6 hold locally, not only on average: before this round the lowest
+ * local pairs were the ring on the wallpaper's ink (1.91), a mark on the ink (2.39), the sight line
+ * on the ink (2.28), a wall on the hatch's edge (1.39) and a mark on the hatch's edge (1.06).
+ */
+describe('local contrast: every ink touches only its own floor (DÜŞÜK 7, D85)', () => {
+  it('the drawing leaves room: the ring and its halos fit the plain band inside the walls; every mark, dot and stripe has a halo', () => {
+    expect(FLOOR_MARGIN).toBeGreaterThanOrEqual(RING_INSET + RING_WIDTH + RING_HALO);
+    expect(RING_HALO).toBeGreaterThanOrEqual(2);
+    for (const halo of [MARK_HALO, DOT_HALO, HATCH_HALO]) expect(halo).toBeGreaterThan(0);
+    // a mark's halo never reaches the band of a wall, even in the smallest cells
+    expect(MARK_SHARE + MARK_HALO).toBeLessThan(0.5 - FLOOR_MARGIN / 80);
+    expect(SEEN_DOT + DOT_HALO).toBeLessThan(MARK_SHARE + MARK_HALO);
+  });
+
+  /** In every view, the lowest contrast of `ink` against the plain floors it touches. */
+  const local = (ink: Rgb): number =>
+    min(VIEWS.map(([, view]) => min(ALL.map((f) => contrast(view(ink), view(f))))));
+
+  it('walls ≥ 4.5:1 and every line, dot and outline ≥ 3:1 against the floor beside it, in every view', () => {
+    expect(local(wall)).toBeGreaterThanOrEqual(4.5);
+    const inks: [string, number][] = [
+      ['settled ring', COLOR_SETTLED_RING],
+      ['mark', COLOR_MARK],
+      ['sight line', COLOR_SEEN_LINE],
+      ['glance', COLOR_GLANCE],
+      ["hatch's edge", COLOR_HATCH_EDGE],
+      ['bookshelf outline', COLOR_FURNITURE_EDGE],
+      ['lamp outline', COLOR_LAMP_EDGE],
+    ];
+    const low = inks.filter(([, ink]) => local(rgb(ink)) < 3);
+    expect(low.map(([name]) => name)).toEqual([]);
+  });
+
+  it('reported: the lowest local pair of each ink', () => {
+    const rows = [
+      ['wall', local(wall)],
+      ['ring', local(ring)],
+      ['mark', local(rgb(COLOR_MARK))],
+      ['sight line', local(rgb(COLOR_SEEN_LINE))],
+      ["hatch's edge", local(edge)],
+    ] as const;
+    console.log(rows.map(([n, v]) => `${n} ${v.toFixed(2)}`).join(', '));
+    expect(rows.every(([, v]) => v > 1)).toBe(true);
   });
 });

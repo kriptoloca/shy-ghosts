@@ -89,13 +89,13 @@ to what the graybox needs (D2).
   - A2 no guessing: every house finished within its band; T4 only in manors, at most once.
   - A3 technique mix: T1-only tutorial; ≥ 1 deduction episode in every generated house; teach,
     rest and breather houses at T2; hard houses, cycle positions 4–9 and manors use T3; no T3
-    before house 12; dailies T3 in ≥ 40 %.
+    before house 7 (was 12; D82); dailies T3 in ≥ 40 %.
   - A4 depth curve: every d in its window; teach < test hard > rest (4–8 < 12–14 > 15–16;
     17–19 < 20–22 > 23–24; breathers below their cycle); MA(50) ≥ 1.4 × MA(13), never more than
     6 below its running best over 13–50; every manor its cycle's maximum (88 of 88); cycles
     0–2 < 4–6 < 8–10, then within ±15 % of the capped cycles' mean.
-  - A5 tutorial order: houses 1–3, 4, 9, 12, 17 and 34 teach their element as GENERATOR.md §9
-    says.
+  - A5 tutorial order: houses 1–3, 4, 5, 7, 8 and 34 teach their element as GENERATOR.md §9
+    says (were 9, 12 and 17; D82).
   - A6 estimated solve time per band: the median ceilings of GENERATOR.md §9; every house among
     1–16 ≤ 130 s; dailies 120–200 s.
   - A7 the naive player fails most mid and late houses: ≤ 0.35 on every hard house, cycle
@@ -183,8 +183,8 @@ to what the graybox needs (D2).
     rule (CLAUDE.md).
 
 - Status 2026-10-21: built and audited (0 KRİTİK, 3 YÜKSEK, 3 ORTA, 5 DÜŞÜK); every finding
-  fixed red-first and uncommitted for the main session (docs/PROGRESS.md); Gate B round 1 not
-  passed (interest, Flow, readability), its tune plan pending; decisions D59–D66.
+  fixed red-first (D59–D66; `4e40bd2`); Gate B rounds 1 and 2 not passed; tune round 1
+  committed (`bfd2b96`), tune round 2 of 2 built, audited and fixed, uncommitted (below).
   - [x] `computeLayout` (portrait, square, landscape; cells ≥ 80 px at 9 × 9 over every design
         size), `main.ts` scaling
   - [x] graybox look: rooms by lightness and pattern with thick walls, furniture, lamps, the lit
@@ -200,8 +200,8 @@ to what the graybox needs (D2).
   - [x] `code-review` and the adversarial audit; the findings fixed red-first (D63–D66):
         `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
-  - [ ] Gate B (the playtester), B1–B7: round 1 not passed; tune round 1 of 2 built (below);
-        round 2 next
+  - [ ] Gate B (the playtester), B1–B7: rounds 1 and 2 not passed; tune rounds 1 and 2 of 2
+        built (below); round 3, the last, next
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
@@ -231,9 +231,49 @@ to what the graybox needs (D2).
   - [x] 14 gates green: `npm run check`, `npm test` (392), `npm run levels:check` (207.0 s),
         `npm run build`, `npm run e2e` (39), `npm run size` (1.71 MB); the design critique of
         the palette (diamonds for polka dots, larger dots with a rim)
-  - [ ] the auditor's A9 re-run on the new files, `code-review` and the adversarial audit
-        (KRİTİK and YÜKSEK closed); the commit (the main session)
-  - [ ] round 2, the last (docs/gate-b-round1.md §9: a new playtester at 360 × 640 @2x, houses
+  - [x] the auditor's A9 re-run on the new files (three findings, fixed in round 2: D88),
+        `code-review` and the adversarial audit (0 KRİTİK, 0 YÜKSEK; the ORTA and DÜŞÜK
+        findings fixed in round 2: D83, D85–D87, D89); the commit (`bfd2b96`)
+  - [x] round 2 played (docs/gate-b-round1.md §9): not passed, B5 interest (median 3 of 5, bar
+        3.5; docs/gate-b-round2.md §0)
+
+- **Gate B tune round 2 of 2, the last** (the plan: docs/gate-b-round2.md; decisions D80–D89;
+  Gate B's bars B1–B7 unchanged; one Gate A clause amended with Hasan's approval, D82: the first
+  shelf, count and lamp at houses 5, 7 and 8, every threshold unchanged). Each task's tests were
+  seen failing first.
+  - [x] 1 the autopilot: patterns, budget levels, `apProfile`, `apOpening`, `freebie`,
+        `openingOf` (`src/gen/autopilot.ts`; `tests/autopilot.test.ts`, calibrated on the list
+        round 2 played: it finishes houses 4–20 but 13 and 20)
+  - [x] 2 A9's three fixes (`relevance.ts`, `build-levels.ts`, `record.ts`; D88)
+  - [x] 3 the ladder of houses 4–24, its lesson tests and opening rules; rebuild (`params.ts`,
+        `build-levels.ts`; `tests/round2.test.ts`; byte for byte the plan's prototype)
+  - [x] 4 the Gate A amendment (`tests/gate-a.test.ts` 42 of 42; GENERATOR §9; D82)
+  - [x] 5 demonstrations in houses 1, 2, 3, 5, 8 and 10: before input opens, an 800 ms hold
+        frame, replays after 5 s idle (`demo.ts`, `demo-play.ts`, `session.ts`; unit and e2e)
+  - [x] 6 success louder than failure: the settle's veil, ring, content face and tick in three
+        beats; the finale's rising ticks and ring of light (`board.ts`, `dots.ts`;
+        `tests/motion.test.ts`; the pixel e2e in `tests/e2e/timing.spec.ts`)
+  - [x] 7 8 hues × 4 levels and 8 patterns, room styles, no wash, swatch ticks, the time below
+        the board (`config.ts`, `look.ts`, `layout.ts`; contrast, look and layout tests; e2e)
+  - [x] 8 the hint's reason until the next move (`session.ts`, `reason.ts`; unit and e2e)
+  - [x] 9 the neutral `state()` and the legend's colour words (`game-debug.ts`, `visible.ts`;
+        unit and e2e)
+  - [x] the round-1 code audit's findings, red first: ORTA 1–5 and DÜŞÜK 6–9 (D83, D85–D87,
+        D89)
+  - [x] 10 docs: GDD §3.3, §3a, §4, §7, §11; GENERATOR §4.6, §4.7, §6, §7, §8, §9, §10.2;
+        docs/questions.md D80–D90; PROGRESS
+  - [x] 11 gates: `npm run check`, `npm test` (468), `npm run levels:check` (195.3 s),
+        `npm run build`, `npm run e2e` (56, none retried), `npm run size` (1.72 MB); the design
+        critique of the palette (docs/PROGRESS.md)
+  - [x] the auditor's A9 re-run: Gate A passed on the new files (1,792 of 1,792); watch item,
+        house 5's blind win rate 0.0078 against the 0.01 cap (D90)
+  - [x] `code-review` and the adversarial audit: 1 KRİTİK, 1 YÜKSEK, 2 ORTA, 10 DÜŞÜK, all fixed
+        red-first (D83–D90; the table in docs/PROGRESS.md); gates again: `npm test` (477),
+        `npm run levels:check` (188.3 s), `npm run e2e` (66, none retried; the timing project,
+        without the GPU flags, green three runs in a row)
+  - [x] the re-audit (all 14 closed; one new DÜŞÜK, a per-frame allocation in `inputHeld()`,
+        fixed by the main session); the commit (the main session)
+  - [ ] round 3, the last (docs/gate-b-round2.md §9: a new playtester at 360 × 640 @2x, houses
         1–20, 27, 31, 34; B1–B7 unchanged; a fail stops the work)
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B

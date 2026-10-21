@@ -90,22 +90,30 @@ export function baseOf(k: number): { id: number; turns: number } {
   };
 }
 
+/** The build metadata that names a house's steps (GENERATOR.md §4.6). */
+type StepNames = 'insights' | 'insightEpisodes';
+
 /**
  * House `k` of the endless list: 1 … 1000 as stored, then `baseOf(k)` turned. The rules are
  * symmetric, so the solution carries over, and every house the list turns grades the same in all
- * four turns (D54), so the grade does too (Gate A, A8).
+ * four turns (D54), so the grade does too (Gate A, A8). The base house's step names do not: a
+ * turn can name a step otherwise (267 of the 1,485 turned houses), and no game code reads them,
+ * so a turned house carries none (A9, round 2; round 2's code audit, DÜŞÜK 8; D88).
  */
-export function houseAt<T extends PlayHouse>(levels: readonly T[], k: number): T {
+export function houseAt<T extends PlayHouse>(levels: readonly T[], k: number): Omit<T, StepNames> {
   if (!Number.isInteger(k) || k < 1) throw new Error(`houseAt: ${String(k)} is not a house`);
   if (k <= LEVEL_COUNT) return levels[k - 1] as T;
   const { id, turns } = baseOf(k);
   const base = levels[id - 1] as T;
   const turned = rotate(base, turns);
-  return {
+  const out: Omit<T, StepNames> & Partial<Record<StepNames, unknown>> = {
     ...base,
     ...turned,
     givens: [...turned.givens],
     solution: [...turned.solution],
     id: k,
   };
+  delete out.insights;
+  delete out.insightEpisodes;
+  return out;
 }

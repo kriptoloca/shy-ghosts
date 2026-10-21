@@ -5,8 +5,6 @@
  * live in the tests that check them (tests/gate-a.test.ts).
  */
 
-import type { Insight } from './grade';
-
 /** Grader techniques (GENERATOR.md §4.2). */
 export type Tech = 1 | 2 | 3 | 4;
 /** The techniques by name; the number is the order the grader tries them in (§4.3). */
@@ -55,8 +53,9 @@ export const EST_PER_EMPTY_CELL = 1.5;
 /** Every generated house asks for at least this many deduction episodes (A3, D16). */
 export const MIN_EPISODES = 1;
 /**
- * From house 10, and in every daily, the forced chain stalls at least twice and each time only a
- * real deduction (an insight other than `shape`) moves it on (Gate B tune round 1, D67).
+ * From house 25, and in every daily, the forced chain stalls at least twice and each time only a
+ * real deduction (an insight other than `shape`) moves it on (Gate B tune round 1, D67). Houses
+ * 4–24 follow round 2's ladder instead (D81).
  */
 export const INSIGHT_EPISODES = 2;
 /** The bands that carry difficulty need insights of at least two kinds (D67). */
@@ -90,8 +89,18 @@ export const UNIQUE_FIX_ALTERNATIVES = 16;
  * insight and relevance rules (D67, D68): houses 9–11 and 15–16 need several thousand.
  */
 export const CANDIDATE_LIMIT = 50_000;
-/** Houses 4, 9 and 17 keep the lowest d among this many qualifying candidates (D15, D20). */
+/**
+ * House 16's lesson, three ghosts in one line (D81): a row or a column that objects cut into this
+ * many segments holds this many solution ghosts.
+ */
+export const SPLIT_TWICE_SEGMENTS = 3;
+/** Houses 4 and 5 keep the lowest d among this many qualifying candidates (D15, D20, D81). */
 export const TEACH_POOL = 50;
+/**
+ * House 8, the first lamp, keeps the lowest d among this many: its light lesson, its resident
+ * beside the beam, no shadow and no free opening leave few qualifying candidates (D81).
+ */
+export const LIGHT_POOL = 5;
 
 // ---- The list (§7, §8, D6, D7, D14) -------------------------------------------------------------
 
@@ -120,7 +129,7 @@ export const ROTATION_CYCLES = 45;
 export const ROTATION_SPAN = ROTATION_CYCLES * CYCLE_PERIOD;
 export const ROTATION_FROM = LEVEL_COUNT - ROTATION_SPAN + 1;
 
-/** The build log's report groups for houses 4–24 (§8): the last house of each band of §7. */
+/** The build log's report groups for houses 4–24 (§8): Gate A's groups (A4, A6), by last house. */
 export const EARLY_GROUPS: readonly (readonly [number, string])[] = [
   [8, '4–8'],
   [11, '9–11'],
@@ -168,9 +177,32 @@ export interface Band {
   d: readonly [number, number];
   /** The naive player's win-rate cap, or null where it is only reported. */
   naiveMax: number | null;
-  /** The teaching test of the house that introduces an element (A5). */
-  teach: 'first-t2' | 'furniture-between' | 'light-needed' | null;
-  /** Keep the lowest d among this many qualifying candidates (houses 4, 9, 17), else the first. */
+  /**
+   * The test of the house that teaches an element or a pattern (A5; the ladder, D81): 4 a claim
+   * (the first step a T2), 5 a shelf between two solution ghosts, 6 the split budget, 8 the
+   * light, 10 the shadow, 16 three ghosts in a line split twice, 17 the lit line, 18 two lamps.
+   */
+  teach:
+    | 'first-t2'
+    | 'furniture-between'
+    | 'split-budget'
+    | 'light-needed'
+    | 'shadow'
+    | 'split-twice'
+    | 'lit-line'
+    | 'two-lamps'
+    | null;
+  /**
+   * How the house may open (D81): 'insight', the autopilot places no ghost before its first stall
+   * (a real insight comes first); 'no-freebie', no room with one free cell and no line single on
+   * the first look; null, any opening.
+   */
+  opening: 'insight' | 'no-freebie' | null;
+  /** The house opens differently from the house before it (D81). */
+  newOpening: boolean;
+  /** The real insight the house must open with, or null (house 12: a cross; D81). */
+  openingKind: 'cross' | null;
+  /** Keep the lowest d among this many qualifying candidates (houses 4, 5, 8), else the first. */
   lowestOf: number | null;
   /** From house 25: the cycle and the position in it. */
   cycle: { c: number; p: number } | null;
@@ -181,17 +213,13 @@ export interface Band {
   turnable: boolean;
   /** Insight episodes the house needs (D67): stalls only a real deduction ends. */
   insightEpisodes: number;
-  /** Kinds of insight it needs (two where the band carries difficulty, D67). */
+  /** Kinds of insight it needs (two where the band carries difficulty from house 25, D67). */
   insightKinds: number;
-  /** The kind it teaches and must use (houses 5, 6, 10 and 17), or null. */
-  needInsight: Insight | null;
   /** House 4, the first deduction: only `shape` steps (a room that lies in one line). */
   shapeOnly: boolean;
-  /** A teach house whose trick must differ from the house before it (D67). */
-  newTrick: boolean;
   /**
-   * Residents that demonstrate the house's element (D70): house 9, two of the solution's ghosts
-   * in one line with a block between them; house 17, one beside the lamp's beam.
+   * Residents that demonstrate the house's element (D70, D81): house 5, two of the solution's
+   * ghosts in one line with a block between them; house 8, one beside the lamp's beam.
    */
   residents: 'block-pair' | 'beam-side' | null;
 }
@@ -207,24 +235,12 @@ const base = {
   turnable: false,
   insightEpisodes: INSIGHT_EPISODES,
   insightKinds: 1,
-  needInsight: null,
   shapeOnly: false,
-  newTrick: false,
   residents: null,
+  opening: null,
+  newOpening: false,
+  openingKind: null,
 } as const;
-
-/**
- * Houses 4–8 teach one trick each (D67): 4 the first deduction (a room in one line), 5 a line a
- * ghost's sight makes, 6 a cross, 7 both in two stalls, 8 two stalls with a trick other than 7's.
- * Houses 6–8 take d up to 14 (was 12): two stalls rarely fit below.
- */
-const EARLY_TEACH: Record<number, Partial<Band>> = {
-  4: { insightEpisodes: 0, insightKinds: 0, shapeOnly: true },
-  5: { insightEpisodes: 1, needInsight: 'line', newTrick: true },
-  6: { insightEpisodes: 1, needInsight: 'cross', newTrick: true, d: [4, 14] },
-  7: { insightEpisodes: 2, insightKinds: 2, newTrick: true, d: [4, 14] },
-  8: { insightEpisodes: 2, newTrick: true, d: [4, 14] },
-};
 
 /** The naive cap on hard houses, cycle positions 1–9 and dailies; manors have their own (D16). */
 export const NAIVE_MAX = 0.35;
@@ -244,119 +260,186 @@ function rise(lo: number, span: number, c: number): number {
   return Math.round((lo * CYCLE_CAP + span * Math.min(c, CYCLE_CAP)) / CYCLE_CAP);
 }
 
+/**
+ * Houses 4–24, the ladder of Gate B's tune round 2 (D81; GENERATOR.md §7): each house teaches one
+ * new pattern or rule, or opens with a real insight, so none is finished on autopilot (D80). The
+ * shelf comes at 5, the first count at 7 and the lamp at 8 (Gate A's A3/A5 positions as amended
+ * by Hasan, D82). Round 1's insight rules (D67) apply from house 25: on these boards the
+ * autopilot, not the grader's count of steps, says what a house asks for.
+ */
+const LADDER_BASE = {
+  insightEpisodes: 0,
+  insightKinds: 0,
+  shapeOnly: false,
+  newOpening: true,
+} as const;
+/** A hard house of the ladder: 6 × 6, T3 required, a real insight before the first ghost. */
+const HARD6 = {
+  role: 'hard',
+  sides: [6],
+  rooms: [6, 7],
+  maxTech: 3,
+  needT3: true,
+  naiveMax: NAIVE_MAX,
+  opening: 'insight',
+} as const;
+/** The 7 × 7 hard houses 20–22. */
+const HARD7 = {
+  ...HARD6,
+  sides: [7],
+  rooms: [7, 8],
+  furniture: [1, 3],
+  lamps: [1, 2],
+  d: [18, 30],
+} as const;
+/** The rests 23–24: 6 × 6 with a lamp, no free opening. */
+const REST6 = {
+  role: 'rest',
+  sides: [6],
+  rooms: [6, 6],
+  furniture: [0, 1],
+  lamps: [1, 1],
+  maxTech: 2,
+  d: [8, 14],
+  opening: 'no-freebie',
+} as const;
+/** A house of the ladder: its board, objects, techniques and d window, and what it changes. */
+type Rung = Pick<Band, 'role' | 'sides' | 'rooms' | 'furniture' | 'lamps' | 'maxTech' | 'd'> &
+  Partial<Band>;
+const LADDER: Record<number, Rung> = {
+  // 4: the claim, a room lying in one line (the first T2); it may open like house 3
+  4: {
+    role: 'teach',
+    sides: [5],
+    rooms: [5, 5],
+    furniture: [0, 0],
+    lamps: [0, 0],
+    maxTech: 2,
+    d: [4, 12],
+    teach: 'first-t2',
+    lowestOf: TEACH_POOL,
+    shapeOnly: true,
+    newOpening: false,
+  },
+  // 5: the shelf blocks sight; two residents in one line with the shelf between them
+  5: {
+    role: 'teach',
+    sides: [5],
+    rooms: [6, 6],
+    furniture: [1, 2],
+    lamps: [0, 0],
+    maxTech: 2,
+    d: [6, 14],
+    teach: 'furniture-between',
+    lowestOf: TEACH_POOL,
+    residents: 'block-pair',
+  },
+  // 6: the split budget, a line a shelf splits holds two ghosts
+  6: {
+    role: 'teach',
+    sides: [5],
+    rooms: [6, 6],
+    furniture: [1, 2],
+    lamps: [0, 0],
+    maxTech: 2,
+    d: [6, 14],
+    teach: 'split-budget',
+  },
+  // 7: the first count (T3), at the opening
+  7: { ...HARD6, rooms: [6, 6], furniture: [0, 1], lamps: [0, 0], d: [12, 24] },
+  // 8: the light, no shadow yet; a resident beside the beam
+  8: {
+    role: 'teach',
+    sides: [6],
+    rooms: [6, 6],
+    furniture: [0, 2],
+    lamps: [1, 1],
+    maxTech: 2,
+    d: [8, 16],
+    teach: 'light-needed',
+    lowestOf: LIGHT_POOL,
+    residents: 'beam-side',
+    opening: 'no-freebie',
+  },
+  9: { ...HARD6, furniture: [1, 3], lamps: [0, 0], d: [12, 24] },
+  // 10: the shadow, light stops at a shelf
+  10: {
+    role: 'teach',
+    sides: [5],
+    rooms: [5, 6],
+    furniture: [1, 2],
+    lamps: [1, 1],
+    maxTech: 2,
+    d: [6, 14],
+    teach: 'shadow',
+    opening: 'no-freebie',
+  },
+  11: { ...HARD6, furniture: [1, 3], lamps: [0, 1], d: [12, 24] },
+  // 12: a cross at the opening
+  12: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24], openingKind: 'cross' },
+  13: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24] },
+  14: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24] },
+  // 15: the one rest of houses 4–20, with no free opening
+  15: {
+    role: 'breather',
+    sides: [5],
+    rooms: [5, 6],
+    furniture: [1, 2],
+    lamps: [0, 1],
+    maxTech: 2,
+    d: [6, 12],
+    opening: 'no-freebie',
+  },
+  // 16: three ghosts in one line split twice
+  16: {
+    role: 'breather',
+    sides: [5],
+    rooms: [6, 7],
+    furniture: [2, 3],
+    lamps: [0, 0],
+    maxTech: 2,
+    d: [6, 12],
+    teach: 'split-twice',
+    opening: 'no-freebie',
+  },
+  // 17: the lit-line budget, a fully lit line stays empty
+  17: {
+    role: 'teach',
+    sides: [6],
+    rooms: [6, 6],
+    furniture: [0, 2],
+    lamps: [1, 1],
+    maxTech: 2,
+    d: [8, 16],
+    teach: 'lit-line',
+  },
+  // 18: two lamps, both needed
+  18: {
+    role: 'teach',
+    sides: [6],
+    rooms: [6, 6],
+    furniture: [0, 2],
+    lamps: [2, 2],
+    maxTech: 2,
+    d: [8, 16],
+    teach: 'two-lamps',
+    opening: 'no-freebie',
+  },
+  19: { ...HARD6, furniture: [1, 3], lamps: [1, 1], d: [14, 24] },
+  20: HARD7,
+  21: HARD7,
+  22: HARD7,
+  23: REST6,
+  24: REST6,
+};
+
 /** The band of house `id` (4 … LEVEL_COUNT; GENERATOR.md §7). */
 export function bandFor(id: number): Band {
   if (id <= TUTORIAL_COUNT) throw new Error(`house ${String(id)} is hand-made (tutorial)`);
-  if (id <= 8) {
-    const first = id === 4;
-    return {
-      ...base,
-      role: 'teach',
-      sides: [5],
-      rooms: [5, 5],
-      furniture: [0, 0],
-      lamps: [0, 0],
-      maxTech: 2,
-      d: [4, 12],
-      teach: first ? 'first-t2' : null,
-      lowestOf: first ? TEACH_POOL : null,
-      ...EARLY_TEACH[id],
-    };
-  }
-  if (id <= 11) {
-    const first = id === 9;
-    // 9 teaches the block on 5 × 5 with one stall; 10 and 11 need two stalls, which 5 × 5 with
-    // blocks that matter almost never gives (0 of 834 candidates), so they move to 6 × 6 (D67)
-    return {
-      ...base,
-      role: 'teach',
-      sides: first ? [5] : [6],
-      rooms: first ? [6, 6] : [6, 7],
-      furniture: first ? [1, 2] : [1, 3],
-      lamps: [0, 0],
-      maxTech: 2,
-      d: first ? [6, 14] : [6, 16],
-      teach: first ? 'furniture-between' : null,
-      lowestOf: first ? TEACH_POOL : null,
-      insightEpisodes: first ? 1 : INSIGHT_EPISODES,
-      // 10 differs from 9 by kind, not only by depth: it needs a cross
-      needInsight: id === 10 ? 'cross' : null,
-      newTrick: true,
-      residents: first ? 'block-pair' : null,
-    };
-  }
-  if (id <= 14) {
-    return {
-      ...base,
-      role: 'hard',
-      sides: [6],
-      rooms: [6, 7],
-      furniture: [2, 3],
-      lamps: [0, 0],
-      maxTech: 3,
-      needT3: true,
-      d: [14, 24],
-      naiveMax: NAIVE_MAX,
-      insightKinds: INSIGHT_KINDS_HARD,
-    };
-  }
-  if (id <= 16) {
-    return {
-      ...base,
-      role: 'breather',
-      sides: [5],
-      rooms: [5, 6],
-      furniture: [1, 2],
-      lamps: [0, 0],
-      maxTech: 2,
-      d: [6, 12],
-    };
-  }
-  if (id <= 19) {
-    const first = id === 17;
-    return {
-      ...base,
-      role: 'teach',
-      sides: [6],
-      rooms: [6, 6],
-      furniture: [0, 2],
-      lamps: [1, 1],
-      maxTech: 2,
-      d: [8, 16],
-      teach: first ? 'light-needed' : null,
-      lowestOf: first ? TEACH_POOL : null,
-      // 17 teaches light with a lamp-made line; 18 and 19 each bring a trick of their own
-      needInsight: first ? 'lamp' : null,
-      newTrick: !first,
-      residents: first ? 'beam-side' : null,
-    };
-  }
-  if (id <= 22) {
-    return {
-      ...base,
-      role: 'hard',
-      sides: [7],
-      rooms: [7, 8],
-      furniture: [1, 3],
-      lamps: [1, 2],
-      maxTech: 3,
-      needT3: true,
-      d: [18, 30],
-      naiveMax: NAIVE_MAX,
-      insightKinds: INSIGHT_KINDS_HARD,
-    };
-  }
   if (id < CYCLE_START) {
-    return {
-      ...base,
-      role: 'rest',
-      sides: [6],
-      rooms: [6, 6],
-      furniture: [0, 1],
-      lamps: [1, 1],
-      maxTech: 2,
-      d: [8, 14],
-    };
+    const rung = LADDER[id];
+    if (!rung) throw new Error(`house ${String(id)} has no place on the ladder`);
+    return { ...base, ...LADDER_BASE, ...rung };
   }
   const cycle = cycleOf(id) as { c: number; p: number };
   const { c, p } = cycle;

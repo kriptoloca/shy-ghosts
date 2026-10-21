@@ -1,4 +1,10 @@
-import { HINT_COOLDOWN_S, MS_PER_S } from '../config';
+import {
+  DEMO_IDLE_MS,
+  DEMO_REPLAYS,
+  DEMO_SKIP_FROM_MS,
+  HINT_COOLDOWN_S,
+  MS_PER_S,
+} from '../config';
 import type { PlayEvent, PlayState } from '../core/state';
 import type { HouseInProgress } from '../platform/storage';
 
@@ -115,5 +121,117 @@ export class HintClock {
 
   used(): void {
     this.readyAt = this.now + HINT_COOLDOWN_S;
+  }
+}
+
+/**
+ * The hint in two presses (D74, D86): the first press, when the hint is ready, shows why the next
+ * step is forced and counts the hint; that reason stays until the player's next move (a tap, a
+ * drag, a stroke, an undo), which takes it away, or the second press, which does the step.
+ */
+export class HintFlow<R> {
+  private shown: R | null = null;
+
+  /** The reason on the board, waiting for the second press. */
+  get pending(): R | null {
+    return this.shown;
+  }
+
+  /** A press on the bulb: show a reason, complete the pending one, or nothing. */
+  press(
+    ready: boolean,
+    explain: () => R | null,
+  ): { kind: 'explain'; reason: R } | { kind: 'complete' } | { kind: 'none' } {
+    if (this.shown !== null) {
+      this.shown = null;
+      return { kind: 'complete' };
+    }
+    if (!ready) return { kind: 'none' };
+    const reason = explain();
+    if (reason === null) return { kind: 'none' };
+    this.shown = reason;
+    return { kind: 'explain', reason };
+  }
+
+  /**
+   * The player's own move (a tap, a drag, a stroke, an undo) takes the reason away; true when one
+   * was showing.
+   */
+  move(): boolean {
+    const had = this.shown !== null;
+    this.shown = null;
+    return had;
+  }
+
+  /** The house is over: nothing is pending. */
+  clear(): void {
+    this.shown = null;
+  }
+}
+
+/**
+ * A house's demonstration over time (D83): it plays again after DEMO_IDLE_MS without input, until
+ * the house's first placement (house 3: its first mark), at most DEMO_REPLAYS times, and never
+ * while the player holds a pointer or a button down or reads a hint's reason (round 2's code
+ * audit, YÜKSEK 1, ORTA 1). A tap skips a replay at once; a first play only after its first
+ * DEMO_SKIP_FROM_MS (a tap left over from the finale never skips it; round 1's code audit,
+ * ORTA 2), counted from the frame after the one it started in (that frame's time passed before
+ * it; round 2's code audit, DÜŞÜK 3). Times are ms of unpaused play; frames are the game loop's.
+ */
+export class DemoClock {
+  private has = false;
+  private idleMs = 0;
+  private replays = 0;
+  private runMs = 0;
+  /** The frame the demonstration in hand started in, and whether it is a replay. */
+  private startFrame = -1;
+  private replay = false;
+
+  /** A new house on screen: whether it has a demonstration that may still replay. */
+  reset(has: boolean): void {
+    this.has = has;
+    this.idleMs = 0;
+    this.replays = 0;
+    this.runMs = 0;
+    this.startFrame = -1;
+    this.replay = false;
+  }
+
+  /** Play time without a demonstration and without input in hand. */
+  idle(ms: number): void {
+    this.idleMs += ms;
+  }
+
+  /** Play time during a demonstration, in frame `frame`. */
+  run(ms: number, frame: number): void {
+    if (frame !== this.startFrame) this.runMs += ms;
+  }
+
+  input(): void {
+    this.idleMs = 0;
+  }
+
+  /** The house's first placement (or, in house 3, its first mark): no more replays. */
+  placed(): void {
+    this.has = false;
+  }
+
+  /** It is time to play the demonstration again, unless something holds it off (`held`). */
+  due(held: boolean): boolean {
+    return !held && this.has && this.replays < DEMO_REPLAYS && this.idleMs >= DEMO_IDLE_MS;
+  }
+
+  /** A demonstration starts in frame `frame`: the first play as the house appears, or a replay. */
+  started(replay: boolean, frame: number): void {
+    if (replay) this.replays++;
+    this.replay = replay;
+    this.startFrame = frame;
+    this.idleMs = 0;
+    this.runMs = 0;
+  }
+
+  /** A tap now skips the demonstration. */
+  skippable(): boolean {
+    return this.replay || this.runMs >= DEMO_SKIP_FROM_MS;
   }
 }

@@ -106,3 +106,26 @@ describe('object relevance (D68)', () => {
     expect(matter(placed, 9)).toBe(true);
   });
 });
+
+describe('A9 (round 2): a see-through block stays a block for the names and the time estimate', () => {
+  /**
+   * Daily 2027-10-02 as Gate B round 1 stored it: made see-through, its corner block at (0,6) left
+   * the solution and the path alone and only renamed a step (an empty cell more in its room), which
+   * passed it as relevant. A see-through block still counts as a block for the namer and for
+   * estSeconds, so that block is idle.
+   */
+  const DAILY_2027_10_02: HouseData = {
+    n: 7,
+    rooms: '0000011222201324550332445533446655374665537766663',
+    objects: '......F....F............F............L...........',
+    givens: [],
+    solution: [4, 12, 10, 20, 22, 25, 31, 42],
+  };
+
+  it("the corner block (0,6) is idle by rule isolation, and the house fails the build's check", () => {
+    const p = parseHouse(DAILY_2027_10_02);
+    const opts = { maxTech: 3, maxT4: 0 } as const;
+    expect(idleObjects(p, p.solution, opts).rule).toContain(6);
+    expect(objectsMatter(p, p.solution, opts)).toBe(false);
+  });
+});

@@ -1,6 +1,7 @@
-import { geometry, parseHouse, rotate, type HouseData } from '../core/house';
+import { geometry, parseHouse, rotate, shadowsOf, type HouseData } from '../core/house';
 import { TUTORIAL_HOUSES } from '../data/tutorial';
 import { QUARTER_TURNS } from '../config';
+import { AP_FULL, apOpening, freebie, openingOf } from './autopilot';
 import { dateRange } from './dates';
 import { makeCandidate, type Candidate } from './generate';
 import {
@@ -11,10 +12,10 @@ import {
   type Grade,
   type GradeOptions,
   type GradeResult,
-  type Insight,
 } from './grade';
 import {
   CANDIDATE_LIMIT,
+  SPLIT_TWICE_SEGMENTS,
   CYCLE_MANOR,
   CYCLE_PERIOD,
   CYCLE_START,
@@ -36,6 +37,7 @@ import {
   bandFor,
   cycleOf,
   type Band,
+  type Tech,
 } from './params';
 import { exactWinRate } from './players';
 import { metaOf, playOf, type House } from './record';
@@ -57,6 +59,7 @@ export type Miss =
   | 'teach'
   | 'turn'
   | 'insight'
+  | 'opening'
   | 'idle'
   | 'naive';
 
@@ -66,7 +69,7 @@ export interface Search {
   role: House['role'];
   tried: number;
   misses: Partial<Record<Miss, number>>;
-  /** Candidates that met every window: 1, or up to `lowestOf` for houses 4, 9 and 17. */
+  /** Candidates that met every window: 1, or up to `lowestOf` for houses 4, 5 and 8. */
   kept: number;
 }
 
@@ -94,36 +97,15 @@ function sorted(cells: readonly number[]): number[] {
   return [...cells].sort((a, b) => a - b);
 }
 
-/**
- * A house's trick (D67): the kinds of insight it asks for, plus `block` when it has furniture
- * and `light` when it has a lamp. Depth does not count: two `line` stalls are one trick.
- */
-export function trickOf(insights: readonly (readonly Insight[])[], objects: string): string[] {
-  const trick: string[] = insightKinds(insights);
-  if (objects.includes('F')) trick.push('block');
-  if (objects.includes('L')) trick.push('light');
-  return trick;
-}
-
-/** The house asks for what its band wants of its insights (D67). */
-export function insightsFit(
-  band: Band,
-  insights: readonly (readonly Insight[])[],
-  objects: string,
-  prevTrick: readonly string[] | null,
-): boolean {
-  const kinds = insightKinds(insights);
+/** The house asks for what its band wants of its insights (D67; house 4's shape only, D81). */
+export function insightsFit(band: Band, insights: GradeResult['insights']): boolean {
   if (insightEpisodes(insights) < band.insightEpisodes) return false;
-  if (kinds.length < band.insightKinds) return false;
-  if (band.needInsight !== null && !kinds.includes(band.needInsight)) return false;
+  if (insightKinds(insights).length < band.insightKinds) return false;
   if (band.shapeOnly && insights.flat().some((i) => i !== TRIVIAL)) return false;
-  if (band.newTrick && prevTrick && trickOf(insights, objects).join() === prevTrick.join()) {
-    return false;
-  }
   return true;
 }
 
-/** Two solution ghosts share a row or a column with furniture between them (house 9, A5). */
+/** Two solution ghosts share a row or a column with furniture between them (house 5, A5). */
 export function furnitureBetween(n: number, objects: string, solution: readonly number[]): boolean {
   for (const a of solution) {
     for (const b of solution) {
@@ -139,10 +121,83 @@ export function furnitureBetween(n: number, objects: string, solution: readonly 
   return false;
 }
 
-/** With every lamp turned into furniture the house has two solutions or more (house 17, A5). */
+/**
+ * With every lamp turned into furniture the house has two solutions or more (the first lamp's
+ * house, A5), its residents placed, as the player meets it (A9, round 2).
+ */
 export function lightNeeded(p: Puzzle): boolean {
   const geo = geometry(p.n, p.objects.join('').replace(/L/g, 'F'));
-  return solve(puzzleOf(geo, p.roomOf), { givens: false }).count >= 2;
+  return solve(puzzleOf(geo, p.roomOf, p.givens), { givens: true }).count >= 2;
+}
+
+/**
+ * Every lamp's light is needed (house 18, two lamps; D81): with any one lamp as furniture the
+ * house has two solutions or more, its residents placed.
+ */
+export function eachLightNeeded(p: Puzzle): boolean {
+  const objects = p.objects.join('');
+  for (let i = 0; i < objects.length; i++) {
+    if (objects[i] !== 'L') continue;
+    const geo = geometry(p.n, `${objects.slice(0, i)}F${objects.slice(i + 1)}`);
+    if (solve(puzzleOf(geo, p.roomOf, p.givens), { givens: true }).count < 2) return false;
+  }
+  return true;
+}
+
+/**
+ * A solution ghost stands in a shelf's shadow (house 10; D81): in a lamp's row or column, past a
+ * shelf, before any other lamp (`shadowsOf`, the walk its demonstration takes too).
+ */
+export function inShadow(n: number, objects: string, solution: readonly number[]): boolean {
+  for (let i = 0; i < n * n; i++) {
+    if (objects[i] !== 'L') continue;
+    if (shadowsOf(n, objects, i).some((s) => solution.includes(s.cell))) return true;
+  }
+  return false;
+}
+
+/**
+ * Three ghosts in one line (house 16; D81): a row or a column that objects cut into three
+ * segments or more holds three solution ghosts.
+ */
+export function splitTwice(n: number, p: Puzzle, solution: readonly number[]): boolean {
+  for (const axis of ['row', 'col'] as const) {
+    const segOf = axis === 'row' ? p.rowSeg : p.colSeg;
+    for (let line = 0; line < n; line++) {
+      const cells = Array.from({ length: n }, (_, k) =>
+        axis === 'row' ? line * n + k : k * n + line,
+      );
+      const segs = new Set(cells.map((i) => segOf[i] as number).filter((s) => s >= 0));
+      const ghosts = cells.filter((i) => solution.includes(i)).length;
+      if (segs.size >= SPLIT_TWICE_SEGMENTS && ghosts >= SPLIT_TWICE_SEGMENTS) return true;
+    }
+  }
+  return false;
+}
+
+/** A row or a column with no free cell from the start: every cell lit or an object (house 17). */
+export function litLine(p: Puzzle): boolean {
+  for (let line = 0; line < p.n; line++) {
+    let row = true;
+    let col = true;
+    for (let k = 0; k < p.n; k++) {
+      if (p.candidate[line * p.n + k]) row = false;
+      if (p.candidate[k * p.n + line]) col = false;
+    }
+    if (row || col) return true;
+  }
+  return false;
+}
+
+/**
+ * The house opens as its band asks (D81): for 'insight' the autopilot places no ghost before it
+ * first stalls; for 'no-freebie' no room has one free cell and no line single shows on the first
+ * look.
+ */
+export function opensRight(p: Puzzle, band: Pick<Band, 'opening'>): boolean {
+  if (band.opening === 'insight') return apOpening(p, AP_FULL).placed === 0;
+  if (band.opening === 'no-freebie') return !freebie(p);
+  return true;
 }
 
 function sameGrade(a: Grade, b: Grade): boolean {
@@ -170,7 +225,7 @@ export function gradeTurns(
   for (let t = 1; t < QUARTER_TURNS; t++) {
     const r = grade(parseHouse(rotate(data, t)), { maxTech: band.maxTech, maxT4: band.maxT4 });
     if (!r.ok || !r.grade || !sameGrade(r.grade, g)) return false;
-    if (!insightsFit(band, r.insights, c.objects, null)) return false;
+    if (!insightsFit(band, r.insights)) return false;
   }
   return true;
 }
@@ -181,16 +236,36 @@ function teaches(band: Band, c: Candidate, g: GradeResult): boolean {
       return g.path[0] === T2;
     case 'furniture-between':
       return furnitureBetween(c.n, c.objects, c.solution);
+    case 'split-budget':
+      // counting whole lines cannot open the house; counting a split line as two can
+      return (
+        apOpening(c.puzzle, { claims: true, budget: 'lines' }).placed === 0 &&
+        apOpening(c.puzzle, { claims: true, budget: 'segments' }).placed >= 1
+      );
     case 'light-needed':
-      return lightNeeded(c.puzzle);
+      // the first lamp shows light only: the shelf's shadow is house 10's lesson
+      return lightNeeded(c.puzzle) && !inShadow(c.n, c.objects, c.solution);
+    case 'shadow':
+      return inShadow(c.n, c.objects, c.solution);
+    case 'split-twice':
+      return splitTwice(c.n, c.puzzle, c.solution);
+    case 'lit-line':
+      // a line with no free cell, and only the budget that leaves it out opens the house
+      return (
+        litLine(c.puzzle) &&
+        apOpening(c.puzzle, { claims: true, budget: 'segments-litblind' }).placed === 0 &&
+        apOpening(c.puzzle, AP_FULL).placed >= 1
+      );
+    case 'two-lamps':
+      return eachLightNeeded(c.puzzle);
     case null:
       return true;
   }
 }
 
 /**
- * The residents of a teaching house (D70), from the solution in reading order: house 9 two
- * ghosts in one line with a block between them, house 17 one beside the lamp's beam (on a cell
+ * The residents of a teaching house (D70, D81), from the solution in reading order: house 5 two
+ * ghosts in one line with a block between them, house 8 one beside the lamp's beam (on a cell
  * next to a lit one). The first choice with which the house still asks for its band's d and
  * insights wins; null when none does.
  */
@@ -218,10 +293,20 @@ export function residentsFor(band: Band, c: Candidate): { puzzle: Puzzle; g: Gra
     const g = grade(puzzle, opts);
     if (!g.ok || !g.grade || g.grade.d < band.d[0] || g.grade.d > band.d[1]) continue;
     if (insightEpisodes(g.insights) < band.insightEpisodes) continue;
-    if (band.needInsight !== null && !insightKinds(g.insights).includes(band.needInsight)) continue;
     return { puzzle, g };
   }
   return null;
+}
+
+/**
+ * The house's opening is the kind its band names, and differs from the house before it when the
+ * band asks for a new one (D81).
+ */
+function opensAs(p: Puzzle, band: Band, prevOpening: string | null): boolean {
+  if (band.openingKind === null && (!band.newOpening || prevOpening === null)) return true;
+  const opening = openingOf(p, band.maxTech);
+  if (band.openingKind !== null && opening !== band.openingKind) return false;
+  return !(band.newOpening && opening === prevOpening);
 }
 
 /** A candidate that met every window, waiting in the pool. */
@@ -235,8 +320,9 @@ interface Qualified {
 /**
  * The house for one place in the list (GENERATOR.md §6–§7, D15): candidates k = 0, 1, … from
  * `seedKey` (and `seedKey/k`), each checked in a staged order, cheap to costly (the generator,
- * the residents of houses 9 and 17, the grade with the band's techniques, d, T3, the episodes,
- * the insights, the manor's lead over its cycle, the teaching test, the turn test, every object
+ * the residents of houses 5 and 8, the grade with the band's techniques, d, T3, the episodes,
+ * the insights, the manor's lead over its cycle, the teaching test, the opening: its kind, and
+ * unlike `prevOpening`, the opening of the house before (D81), the turn test, every object
  * mattering, then the naive player); the first that passes wins, or the lowest d among the first
  * `lowestOf` that pass. Fails loudly after CANDIDATE_LIMIT candidates without one.
  */
@@ -247,7 +333,7 @@ function choose(
   seedKey: string,
   cycleMax: number,
   searches: Search[],
-  prevTrick: readonly string[] | null = null,
+  prevOpening: string | null = null,
 ): House {
   const misses: Partial<Record<Miss, number>> = {};
   const miss = (m: Miss): void => {
@@ -293,7 +379,7 @@ function choose(
       miss('episodes');
       continue;
     }
-    if (!insightsFit(band, g.insights, c.objects, prevTrick)) {
+    if (!insightsFit(band, g.insights)) {
       miss('insight');
       continue;
     }
@@ -303,6 +389,10 @@ function choose(
     }
     if (!teaches(band, c, g)) {
       miss('teach');
+      continue;
+    }
+    if (!opensRight(c.puzzle, band) || !opensAs(c.puzzle, band, prevOpening)) {
+      miss('opening');
       continue;
     }
     if (band.turnable && !gradeTurns(band, c, g.grade)) {
@@ -382,6 +472,11 @@ function tutorialHouses(): House[] {
   });
 }
 
+/** The techniques a built house was graded with: T1 for the tutorial, else its band's. */
+function techOf(h: House): Tech {
+  return h.role === 'tutorial' ? T1 : bandFor(h.id).maxTech;
+}
+
 /**
  * The house list and the dailies (GENERATOR.md §6–§8). Houses 4–24 in order; from 25 each cycle's
  * other houses first, then its manor, which must lead them all (D15); then one daily per date.
@@ -401,7 +496,7 @@ export function buildLevels(opts: BuildOptions = {}): Built {
       `shy-ghosts/level/${String(id)}`,
       cycleMax,
       searches,
-      before ? trickOf(before.insights, before.objects) : null,
+      before && band.newOpening ? openingOf(parseHouse(before), techOf(before)) : null,
     );
     byId.set(id, house);
     if (id % LOG_EVERY_HOUSES === 0) log(`house ${String(id)} (${String(byId.size)} built)`);

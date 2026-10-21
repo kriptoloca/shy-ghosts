@@ -25,6 +25,7 @@ import {
   WALL_MAX,
   WALL_MIN,
   WALL_SHARE,
+  WIN_DIGITS_SIZE,
 } from '../config';
 
 /**
@@ -224,6 +225,30 @@ export function dotsLayout(l: Layout, rooms: number): Circle[] {
     y: l.hud.y + m + r + Math.floor(k / cols) * step,
     r,
   }));
+}
+
+/**
+ * Where the solve time ticks in during the finale (D85), a box WIN_DIGITS_SIZE high: below the
+ * board when the board leaves room under it (portrait); else in the bottom band left of the undo
+ * button (square, and portrait near 1:1); in landscape, under the buttons in the HUD column. It
+ * never meets a progress dot, the board or a button.
+ */
+export function timeBox(l: Layout): Rect {
+  const m = LAYOUT_MARGIN;
+  const h = WIN_DIGITS_SIZE;
+  if (l.arrangement === 'landscape') {
+    const top = l.buttons.hint.y + l.buttons.hint.r + BUTTON_PAD;
+    const bottom = l.size.height - m;
+    return { x: l.hud.x + m, y: (top + bottom - h) / 2, width: l.hud.width - 2 * m, height: h };
+  }
+  const below = l.board.y + l.board.height;
+  const gap = l.hud.y - below;
+  if (gap >= h + 2 * BUTTON_PAD) {
+    return { x: l.board.x, y: below + (gap - h) / 2, width: l.board.width, height: h };
+  }
+  const undo = l.buttons.undo;
+  const right = undo.x - undo.r - BUTTON_PAD;
+  return { x: m, y: l.hud.y + (l.hud.height - h) / 2, width: right - 2 * m, height: h };
 }
 
 /** The cell under a point, or −1 outside the board. */

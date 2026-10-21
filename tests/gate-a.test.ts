@@ -31,7 +31,9 @@ import { solve } from '../src/gen/solve';
 /**
  * Gate A (GENERATOR.md §9, A1–A8; A9 is the auditor's): pure tests over every built house. The
  * thresholds are fixed (CLAUDE.md, the fun gate): none of the numbers below may move to make the
- * gate pass; only the windows in src/gen/params.ts and the generator's mechanics may.
+ * gate pass; only the windows in src/gen/params.ts and the generator's mechanics may. The one
+ * amendment is Hasan's (D82, 2026-10-21): the first shelf, count and lamp at houses 5, 7 and 8
+ * (were 9, 12 and 17); every quality threshold is unchanged.
  */
 const read = (name: string): string =>
   readFileSync(new URL(`../src/data/${name}`, import.meta.url), 'utf8');
@@ -125,10 +127,10 @@ describe('Gate A — A3 technique mix per band', () => {
     expect(easy.filter((h) => h.grade.maxTech !== 2)).toEqual([]);
   });
 
-  it('hard houses, cycle positions 4–9 and manors use T3 (100 %); no T3 before house 12', () => {
+  it('hard houses, cycle positions 4–9 and manors use T3 (100 %); no T3 before house 7 (D82)', () => {
     const tough = LEVELS.filter((h) => ['hard', 'cycle-high', 'manor'].includes(h.role));
     expect(tough.filter((h) => h.grade.maxTech < 3 || !usesT3(h))).toEqual([]);
-    expect(ids(1, 11).filter(usesT3)).toEqual([]);
+    expect(ids(1, 6).filter(usesT3)).toEqual([]);
   });
 
   it('dailies: T3 at most, T3 in at least 40 %', () => {
@@ -261,19 +263,19 @@ describe('Gate A — A5 the tutorial teaches each rule in order', () => {
     expect(grade(model(h), { maxTech: 2 }).path[0]).toBe(2);
   });
 
-  it('no furniture before house 9; house 9 sets two ghosts in one line with furniture between', () => {
-    expect(ids(1, 8).filter((h) => h.objects.includes('F'))).toEqual([]);
-    const h = level(9);
+  it('no furniture before house 5; house 5 sets two ghosts in one line with furniture between (D82)', () => {
+    expect(ids(1, 4).filter((h) => h.objects.includes('F'))).toEqual([]);
+    const h = level(5);
     expect(furnitureBetween(h.n, h.objects, h.solution)).toBe(true);
   });
 
-  it("no lamp before house 17; house 17's light is necessary (as furniture: ≥ 2 solutions)", () => {
-    expect(ids(1, 16).filter((h) => h.objects.includes('L'))).toEqual([]);
-    expect(lightNeeded(model(level(17)))).toBe(true);
+  it("no lamp before house 8; house 8's light is necessary (as furniture: ≥ 2 solutions; D82)", () => {
+    expect(ids(1, 7).filter((h) => h.objects.includes('L'))).toEqual([]);
+    expect(lightNeeded(model(level(8)))).toBe(true);
   });
 
-  it('the first T3 at house 12; no T4 before house 34', () => {
-    expect(LEVELS.find(usesT3)?.id).toBe(12);
+  it('the first T3 at house 7 (D82); no T4 before house 34', () => {
+    expect(LEVELS.find(usesT3)?.id).toBe(7);
     expect(ids(1, 33).filter((h) => h.grade.t[3] > 0)).toEqual([]);
   });
 });

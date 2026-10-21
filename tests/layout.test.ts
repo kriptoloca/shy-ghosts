@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT, DOT_R_MIN } from '../src/config';
+import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT, DOT_R_MIN, WIN_DIGITS_SIZE } from '../src/config';
 import { SIDE_MAX } from '../src/gen/params';
 import {
   BOOT_SIZES,
@@ -9,6 +9,7 @@ import {
   computeLayout,
   designSize,
   dotsLayout,
+  timeBox,
   type Circle,
   type Rect,
   type Size,
@@ -278,5 +279,49 @@ describe('dotsLayout: one progress dot per room (D75)', () => {
     const dots = dotsLayout(l, 6);
     expect(dots.map((d) => d.x)).toEqual([...dots.map((d) => d.x)].sort((a, b) => a - b));
     expect(new Set(dots.map((d) => d.y)).size).toBe(1);
+  });
+});
+
+describe('timeBox: the solve time below the board (D85)', () => {
+  /**
+   * A solve time under ten minutes ("9:59") at about 0.6 em a character, in design px; a longer one
+   * is drawn smaller to fit the box (src/game/board.ts).
+   */
+  const TIME_WIDTH = 4 * 0.6 * WIN_DIGITS_SIZE;
+
+  it('never meets a progress dot, the board or a button, and fits the digits, at every design size', () => {
+    const wrong: string[] = [];
+    for (const size of designSizes()) {
+      for (const rooms of [2, 5, 8, 12]) {
+        const l = computeLayout(size, SIDE_MAX);
+        const t = timeBox(l);
+        const tag = `${String(size.width)}×${String(size.height)} ${l.arrangement}`;
+        if (!inside(t, size)) wrong.push(`${tag}: off screen`);
+        if (t.height < WIN_DIGITS_SIZE || t.width < TIME_WIDTH) wrong.push(`${tag}: too small`);
+        const pad = l.wall / 2;
+        const board = {
+          x: l.board.x - pad,
+          y: l.board.y - pad,
+          width: l.board.width + 2 * pad,
+          height: l.board.height + 2 * pad,
+        };
+        if (overlaps(t, board)) wrong.push(`${tag}: on the board`);
+        for (const b of [l.buttons.undo, l.buttons.hint]) {
+          if (overlaps(t, circleBox(b))) wrong.push(`${tag}: on a button`);
+        }
+        for (const d of dotsLayout(l, rooms)) {
+          if (overlaps(t, circleBox(d))) wrong.push(`${tag}: on a dot (${String(rooms)} rooms)`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('stands right below the board in portrait at 9:16', () => {
+    const l = computeLayout(designSize(360, 640), 6);
+    const t = timeBox(l);
+    expect(t.y).toBeGreaterThan(l.board.y + l.board.height);
+    expect(t.y + t.height).toBeLessThan(l.hud.y);
+    expect(t.x + t.width / 2).toBeCloseTo(l.board.x + l.board.width / 2);
   });
 });

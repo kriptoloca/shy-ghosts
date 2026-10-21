@@ -5,7 +5,7 @@ import type { DrawnState } from '../../src/game/board';
 import type { ViewState } from '../../src/game/view';
 import { SAVE_KEY } from '../../src/platform/storage';
 import { Screen } from '../support/screen';
-import { CANVAS, TEST, waitState } from './helpers';
+import { CANVAS, TEST, waitNeutral, waitState } from './helpers';
 
 /**
  * Playing a house by real input in the e2e (the graybox and Gate B round-1 specs): opening a
@@ -15,7 +15,10 @@ import { CANVAS, TEST, waitState } from './helpers';
  */
 export async function open(page: Page, query: string): Promise<void> {
   await page.goto(`${TEST}?${query}${CANVAS}`, { waitUntil: 'load' });
-  await waitState(page, (s) => s.scene === 'Game' && s.input && s.phase === 'play', 'the game');
+  // the playtest mode's state is neutral (D87): no scene, no phase, input open or closed
+  if (query.includes('playtest=1')) await waitNeutral(page, (s) => s.input === 'open', 'the game');
+  else
+    await waitState(page, (s) => s.scene === 'Game' && s.input && s.phase === 'play', 'the game');
 }
 
 export async function center(page: Page, cell: number): Promise<{ x: number; y: number }> {
@@ -117,7 +120,7 @@ export async function stored(page: Page): Promise<{ seconds: number; moves: numb
 /** Every event list played on the strict model screen (D52): no problem, and where it ends. */
 export function replayed(h: DebugHouse, record: DebugRecord): ViewState {
   const screen = new Screen(model(h), record.start);
-  for (const list of record.moves) screen.play(list);
+  for (const m of record.moves) screen.play(m.events, m.kind);
   expect(screen.problems).toEqual([]);
   return screen.view();
 }
@@ -134,11 +137,17 @@ export async function settledEqualsRules(page: Page): Promise<ViewState> {
   const rules = got.rules as ViewState;
   const h = await house(page);
   expect(replayed(h, got.events as DebugRecord)).toEqual(rules);
-  const { residents, dots, ...shown } = drawn;
+  const { residents, dots, content, ticks, ...shown } = drawn;
   expect(shown).toEqual(rules);
-  // one progress dot per room, filled exactly for the settled rooms (D75)
+  // one progress dot per room, filled exactly for the settled rooms, each with its tick (D75, D84)
   expect(dots).toEqual(rules.settled);
+  expect(ticks).toEqual(rules.settled);
   expect(residents).toEqual(h.givens.filter((g) => rules.ghosts.some(([c]) => c === g)));
+  // the calm ghosts of settled rooms wear the content face, and no other (D84)
+  const m = model(h);
+  const settled = new Set(rules.settled);
+  const happy = rules.ghosts.filter(([c, st]) => st === 'calm' && settled.has(m.roomOf[c] ?? -1));
+  expect(content).toEqual(happy.map(([c]) => c));
   return rules;
 }
 

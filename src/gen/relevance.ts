@@ -7,7 +7,9 @@ import { puzzleOf, type Puzzle } from './solve';
  * house must matter. Each object is changed in two ways, the residents placed both times:
  * - the literal test: the object removed (its cell empty, same room, a candidate unless lit);
  * - rule isolation: what the object does is switched off alone. A block turns see-through (no
- *   ghost may stand there, but sight and light pass); a lamp's light goes out (it stays a block).
+ *   ghost may stand there, but sight and light pass; for the step names and the time estimate it
+ *   is still a block, so a step renamed only by its cell never passes it: A9, round 2); a lamp's
+ *   light goes out (it stays a block).
  * The object matters when the change costs the house its unique stored solution or changes its
  * grade: d, the path or the insight names. The grader alone decides it: its steps are sound, so a
  * house it finishes has exactly the one solution it placed; one it cannot finish grades
@@ -22,8 +24,13 @@ function changed(p: Puzzle, cell: number, test: ObjectTest): Puzzle {
   if (test === 'literal' || o === 'F') {
     const geo = geometry(p.n, `${objects.slice(0, cell)}.${objects.slice(cell + 1)}`);
     if (test === 'literal') return puzzleOf(geo, p.roomOf, p.givens);
-    // see-through: open to sight and light, but still no place for a ghost
-    const see: Geometry = { ...geo, candidate: geo.candidate.map((c, i) => c && i !== cell) };
+    // see-through: open to sight and light, but still no place for a ghost, and still a block for
+    // the namer and for estSeconds (A9, round 2)
+    const see: Geometry = {
+      ...geo,
+      objects: p.objects,
+      candidate: geo.candidate.map((c, i) => c && i !== cell),
+    };
     return puzzleOf(see, p.roomOf, p.givens);
   }
   // a lamp with its light off is a block

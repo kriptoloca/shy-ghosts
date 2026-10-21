@@ -112,32 +112,45 @@ solutions).
 | 3 | `ACCC / ACBB / ADDB / DDDB` | (0,3) | (0,3), (1,2), (2,0), (3,1) | three placements, each the last free cell of its room |
 
 Then each new element is taught by the house that introduces it, and tests prove it (GENERATOR.md
-§9, A5): house 4 is the first without a resident and needs the first deduction; house 9's
-solution has two ghosts in one row or column with furniture between them (furniture blocks
-sight); house 12 is the first that needs the counting deduction (T3); house 17's lamp is
-load-bearing (without its light the house would have more than one solution).
+§9, A5, as amended by D82): house 4 is the first without a resident and needs the first
+deduction (a room lying in one line claims it); house 5's solution has two ghosts in one row or
+column with furniture between them (furniture blocks sight); house 7 is the first that needs the
+counting deduction (T3); house 8's lamp is load-bearing (without its light, its resident placed,
+the house would have more than one solution). Until Gate B round 2 these were houses 9, 12 and 17.
 
-**Teaching demonstrations and residents** (Gate B tune round 1, D70). No text: when the first
-house of sight (1), of rows and columns (2), of blocks (9) and of lamps (17) first appears (never
-on a resume) a short scene shows the rule, at most 1.5 s, with input closed until it ends; a tap
-skips it and never counts as a game tap.
+**Teaching demonstrations and residents** (Gate B tune rounds 1 and 2, D70, D83). No text: when
+the first house of sight (1), of rows and columns (2), of marks (3), of blocks (5), of lamps (8)
+and of shadows (10) appears, a short scene shows the rule before input opens and ends on an
+800 ms hold frame that shows the whole lesson, at most 2.3 s in all. It plays again after 5 s
+without input until the house's first placement (house 3: its first mark), at most 3 times, never
+while a finger or a button is down or a hint's reason shows; a resume plays no first one. A tap
+skips it and never counts as a game tap; a tap in a first play's first 300 ms does nothing (a
+replay skips at once).
 
 | House | Residents (nightcap) | Demonstration |
 | --- | --- | --- |
-| 1 | (0,0), as above | it blinks awake; dotted trails run from it along its row and column to the edges and fade (900 ms) |
+| 1 | (0,0), as above | it blinks awake; dotted trails run from it along its row and column to the edges (900 ms); as the trail reaches (0,1) a see-through ghost appears there and both cover their eyes, so (1,1) is the one cell left |
 | 2 | (0,1), as above | the same trails, shorter (600 ms) |
-| 9 | two of the solution's ghosts, in one line with the bookshelf between them | each one's trail runs toward the other and stops at the shelf with a small bump (900 ms) |
-| 17 | one of the solution's ghosts, unlit, beside the lamp's beam | the lamp's light sweeps out along its row and column (500 ms); a see-through copy of the resident steps into it, squints, shields its eyes and steps back (700 ms); the copy stands only on a lit cell, never on a solution cell |
+| 3 | (0,3), as above | a see-through hand drags along the resident's row and marks pop in under it (700 ms) |
+| 5 | two of the solution's ghosts, in one line with the bookshelf between them | each one's trail runs toward the other and stops at the shelf with a small bump (900 ms) |
+| 8 | one of the solution's ghosts, unlit, beside the lamp's beam | the lamp's light sweeps out along its row and column (500 ms); a see-through copy of the resident steps into it and squints (400 ms); the copy stands only on a lit cell, never on a solution cell |
+| 10 | none | the lamp's light sweeps out and stops at the bookshelf; a see-through copy behind the shelf stays calm (never on a solution cell; with no such cell, only the stop) |
 
-The residents of 9 and 17 are an exception to the brief's non-goal "givens outside the three
+The residents of 5 and 8 are an exception to the brief's non-goal "givens outside the three
 tutorial houses": they teach and never make a house easier than its band (the generator picks
-them first and still requires the band's insights, GENERATOR.md §6).
+them first and still requires the band's lesson, GENERATOR.md §6).
 
-**Difficulty after the tutorial** (D67, GENERATOR.md §4.6, §7): houses 4–8 each teach one trick
-(4 the first deduction: a room in one line; 5 a room a ghost's sight makes one line; 6 a cell
-that sees a room from two sides; 7 both, in two stalls; 8 two stalls with another trick); from
-house 10 every house and every daily stalls twice on a real insight, and the houses that carry
-difficulty ask for two kinds; every block and lamp matters.
+**Difficulty after the tutorial** (Gate B tune round 2, D80, D81; GENERATOR.md §4.7, §7): each
+house 4–20 either teaches one new pattern or rule or opens with a real insight, measured by an
+autopilot that plays only the one-look patterns of a Queens player. The lessons: 4 the claim (a
+room lying in one line claims it), 5 the bookshelf, 6 the split budget (a split line holds two
+ghosts), 8 the light, 10 the shadow, 16 three ghosts in one line split twice, 17 the lit-line
+budget (a fully lit line stays empty), 18 two lamps. The real insights, at the opening: a count
+(k rooms fill k lines) in 7, 9, 11, 13, 14, 20 and 21; a cross (one cell sees a whole room from
+two sides) in 12, 19 and 22, then a count. 15, 23 and 24 rest. No free opening after house 10
+but 17's lesson; no two houses in a row open alike. From house 25 and in every daily, round 1's
+rule holds (D67): two real insight episodes, and the houses that carry difficulty ask for two
+kinds. Every block and lamp matters.
 
 ## 3a. Feel spec (`pebblit-game-craft` workflow A; brief §4.2)
 
@@ -149,18 +162,18 @@ success gets the stack. Values are starting points behind named constants in
 | Action → outcome | Visual | Sound | Camera | Haptic (Android) | Duration |
 | --- | --- | --- | --- | --- | --- |
 | Place → calm | pop in (scale 0 → 1.2 → 1.0); the eyes glance left, right, up, down while faint dotted rays sweep its row and column up to the first blocker; a sigh puff | settle chime, +1 semitone per room settled in this house (cap +8), reset per house | none | 10 ms | 120 ms pop, 250 ms glance |
-| Room settles | the ghost bobs (scale 1.15 and an 8 px hop, 160 ms); the room's dashed teal ring draws round it (250 ms) over a faint teal wash; its progress dot fills with a pop (120 ms) (D71, D73) | (the chime above) | none | (above) | 160 ms bob, 250 ms ring, 120 ms dot |
-| Place → seen | both ghosts shiver ±3 px (2 swings × 30 ms) and cover their eyes with their hands; a dotted line between them shows twice (100 ms on, 240 ms off, 100 ms on: under 3 flashes a second, D23); their rooms get no ring; the shiver never repeats: the pose and the dotted line carry the state while the conflict lasts (D73) | soft low "eep", −10 dB, 120 ms | none | none | 60 ms (the line 440 ms) |
+| Room settles | three beats (D71, D73, D84): a white veil flashes over the room's whole floor (alpha 0.45 → 0, 300 ms) as the ghost pops in, and the ghost bobs (scale 1.2 and a 12 px hop, 220 ms) and keeps a content face (eyes closed in a smile); as the veil fades, the room's solid teal ring draws round it (250 ms) and stays, its floor keeping its colour; then the ghost gives a small content pop (scale 1.1, 160 ms) as its progress dot pops to 1.5× (160 ms). The dot fills and keeps a tick from the first beat | (the chime above) | none | (above) | about 710 ms: 300 ms veil, 220 ms bob, 250 ms ring, 160 ms pops |
+| Place → seen | both ghosts shiver ±3 px (2 swings × 30 ms) and cover their eyes with their hands; a dotted line between them appears and stays (its flash, drawn over a line already at full strength, never showed and is gone, D84); their rooms get no ring; the shiver never repeats: the pose and the dotted line carry the state while the conflict lasts (D73) | soft low "eep", −10 dB, 120 ms | none | none | 60 ms |
 | Place → lit | the ghost squints and shields its eyes; the lit cells of that lamp flash warm once (no repeat, D73) | soft "hiss", −10 dB | none | none | 200 ms |
-| A calm ghost becomes seen or lit (D22) | its room's ring and wash fade and its progress dot empties | none of its own (the placement's eep or hiss covers it) | none | none | 200 ms |
+| A calm ghost becomes seen or lit (D22) | its room's ring fades, its content face goes and its progress dot empties, tick and all (D84) | none of its own (the placement's eep or hiss covers it) | none | none | 100 ms |
 | One move calms k ghosts | each freed ghost sighs (scale 1.1, puff) 70 ms after the previous, rising one semitone each: the cascade from one tap | rising ticks | none | 10 ms on the last | 70 ms × k |
 | Relocate | the ghost glides to the new cell (ease in-out), then the outcome row above | soft swish, −14 dB | none | none | 220 ms |
 | Drag a ghost (D72) | lifted (scale 1.1), it follows the finger from cell to cell; dropped in its room or in a room without a ghost it glides there (the relocate row); dropped anywhere else it glides back with the 2 px nudge | soft swish, −14 dB | none | none | 220 ms |
 | Remove | floats up 20 px and fades | whoosh, −14 dB | none | none | 180 ms |
 | Mark stroke | dots pop in per cell (scale 0 → 1) / shrink when erased | tick, −20 dB | none | none | 60 ms per cell |
-| Hint (D74) | first press, the reason: the lines and rooms that force the next step stay bright while the rest of the board dims, and the target room pulses every 500 ms; the cell stays hidden; a wrong ghost trembles (4 × 30 ms) inside a dashed outline; for 2 s. Second press (or the player's own move): the place or remove row | sparkle | none | none | the reason for 2 s, then the row |
-| Teaching demonstration (§3.3, D70) | in houses 1, 2, 9 and 17, before input opens: the resident blinks awake and dotted trails run out along its row and column (900 ms; 600 ms in house 2); in house 9 each resident's trail stops at the bookshelf with a bump; in house 17 the lamp's light sweeps out (500 ms) and a see-through copy of the resident steps into it, squints and steps back (700 ms) | none (Epic 4) | none | none | ≤ 1.5 s; a tap skips it |
-| House solved | hit stop 50 ms; rooms light one by one in room-id order (reading order of each room's first cell, so the light sweeps down the house, D9) every `min(90, 700 / R)` ms, +1 semitone each, the last one louder; 8 sparks per room (≤ 40 on screen); every ghost hops and turns to the camera (180 ms), then waves twice (2 × 200 ms); the solve-time digits tick in (300 ms) (D73) | rising arpeggio, last note loudest | 3 px kick on the last room | 35 ms | about 2.0 s: the next house slides in from 1,650 ms (350 ms); a tap skips from 600 ms on (earlier taps are ignored, so the last placement's tap never skips the payoff) |
+| Hint (D74, D86) | first press, the reason: the lines and rooms that force the next step stay bright while the rest of the board dims, and the target room pulses every 500 ms; the cell stays hidden; a wrong ghost trembles (4 × 30 ms) inside a dashed outline; it stays until the player's next move (a tap, a drag, an undo) or the second press, and a pause freezes it. Second press: the place or remove row | sparkle | none | none | the reason until the next move, then the row |
+| Teaching demonstration (§3.3, D70, D83) | in houses 1, 2, 3, 5, 8 and 10, before input opens: the resident blinks awake and dotted trails run out along its row and column (900 ms; 600 ms in house 2); in house 1 a see-through ghost appears on (0,1) and both cover their eyes; in house 3 a see-through hand drags along the resident's row and marks pop in under it (700 ms); in house 5 each resident's trail stops at the bookshelf with a bump; in house 8 the lamp's light sweeps out (500 ms) and a see-through copy of the resident steps into it and squints (400 ms); in house 10 the light stops at the bookshelf and a see-through copy behind it stays calm. Each ends on an 800 ms hold frame that shows the whole lesson, and plays again after 5 s without input until the house's first placement (house 3: its first mark), at most 3 times, never while a finger or a button is down or a hint's reason shows | none (Epic 4) | none | none | ≤ 2.3 s; a tap skips it, a first play never in its first 300 ms |
+| House solved | hit stop 50 ms; rooms light one by one in room-id order (reading order of each room's first cell, so the light sweeps down the house, D9) every `min(110, 900 / R)` ms, each brighter than the last (alpha 0.3 → 0.6) and each with a tick larger and higher than the last (scale 1 → 1.6, 4 px higher a room): the rising ticks, +1 semitone each, the last one louder; the lights stay on until the ring of light, then fade as the next house comes; 8 sparks per room (≤ 40 on screen); a ring of light runs from the board's middle to its frame (300 ms); every ghost hops and turns to the camera (180 ms), then waves twice (2 × 200 ms); the solve-time digits tick in below the board (300 ms) (D73, D84) | rising arpeggio, last note loudest | 3 px kick on the last room | 35 ms | about 2.4 s: the next house slides in from 2,050 ms (350 ms); a tap skips from 600 ms on (earlier taps are ignored, so the last placement's tap never skips the payoff) |
 | Daily solved | the win above, then the streak flame grows and its digits flip; the share card button pops in (web portals only) | flame whoosh | none | 35 ms | +600 ms |
 | Trunk opens (every 3 houses) | the trunk shakes twice, the lid pops, a costume piece flies onto the ghosts | pop + chime | none | 15 ms | 700 ms, during the slide-in |
 | Tap a blocker or given | a 2 px nudge | none | none | none | 80 ms |
@@ -168,12 +181,16 @@ success gets the stack. Values are starting points behind named constants in
 - **Inversion test** (unit, brief §4.2; `tests/motion.test.ts`): every failure row (seen, lit,
   cools, nudge) plays below the settle chime as played; no failure row moves the camera or
   vibrates; every success motion moves farther and lasts longer than any failure motion (the
-  settle bob's 8 px over 160 ms against the shiver's 3 px over 60 ms); no failure motion repeats;
-  no flash repeats faster than 3 times a second; haptics: failure never longer than the success
-  tick (D73).
+  settle bob's 12 px over 220 ms against the shiver's 3 px over 60 ms); no failure motion
+  repeats; no flash repeats faster than 3 times a second; haptics: failure never longer than the
+  success tick (D73). On screen (e2e at 360 × 640; D84): a settle changes at least 3 times a
+  conflict's board area and stays in motion at least twice as long; a solve's beat (before the
+  next house slides in) at least 10 times its area and 6 times as long. Time in motion is the
+  plan's frames every 50 ms, read off every drawn frame (each frame that differs from the one
+  before counts until the next is drawn).
 - **Cascade per input:** a placement that ends a conflict releases the sigh cascade (k × 70 ms)
-  and the chimes; the last placement releases the finale (about 2 s, D73) the player does not
-  drive.
+  and the chimes; the last placement releases the finale (about 2.4 s, D73, D84) the player does
+  not drive.
 - **Escalation:** the chime climbs one semitone per settled room (cap +8, reset per house), so the
   fifth settle sounds different from the first; the win arpeggio tops it.
 - **Micro-win cadence:** room settles are the micro-wins, about 6–10 a minute after the tutorial
@@ -205,20 +222,24 @@ success gets the stack. Values are starting points behind named constants in
 - **The house:** a cross-section, each room with its own wallpaper pattern and lightness (not
   hue alone), dark walls between rooms; bookshelves, wardrobes and pianos as furniture; lamps
   with a warm cone of light along their row and column; a facade and sky per chapter.
-- **Graybox palette** (D71; Epic 4's art may change any value inside the same floors): a light,
-  muted "old wallpaper" house at night (the page around it stays dark). Twelve floors, four
-  lightness levels (L* 89, 79, 69, 59) of three dusty hue families (rose, sand, slate: the triple
-  that stays apart best for a deuteranope), chroma ≤ 20, a wallpaper pattern on every floor
-  (vertical or horizontal stripes, two diagonals, small diamonds, checks), its ink 13 L* darker; every room
-  of a house gets a floor of its own, neighbours a different level and pattern. Walls dark ink,
-  12–18 design px. Lit cells: thin amber stripes outlined in brown over the unchanged wallpaper.
-  A settled room: a dashed dark-teal ring inside its walls over a faint teal wash. Marks and
-  lines dark ink. Furniture is a bookshelf; the lamp an amber disc with rays and a brown outline.
-  The floors are tests (`tests/contrast.test.ts`): walls ≥ 4.5:1 against every floor in every
-  state (plain, lit, settled, both); neighbours ≥ 1.3:1, ΔL* ≥ 9.5 and ΔE00 ≥ 6 for a
-  deuteranope; any two floors ΔE00 ≥ 7; the settled ring ≥ 3:1 in normal vision, grayscale and
-  for a deuteranope; marks, lines and outlines ≥ 3:1; a lit or settled cell stays closest to its
-  own room's colour.
+- **Graybox palette** (D71, D85; Epic 4's art may change any value inside the same floors): a
+  light, muted "old wallpaper" house at night (the page around it stays dark). 32 floors: eight
+  dusty hue families (clay, sand, olive, sage, teal, sky, lilac, rose) at four lightness levels
+  (L* 89, 79, 69, 59), chroma ≤ 20, and eight wallpaper patterns (vertical or horizontal
+  stripes, two diagonals, small diamonds, checks, crosshatch, scales), each ink darker than its
+  floor. Neighbours differ in level, hue and pattern; up to 8 rooms every room has a hue and a
+  pattern of its own; from 9 rooms a hue repeats only on rooms that do not touch, two levels
+  apart, never with the same pattern. Walls dark ink, 12–18 design px; the wallpaper stops
+  13 design px inside every wall, so the ring and every line there touch only their floor's own
+  colour. Lit cells: thin amber stripes outlined in brown over the unchanged wallpaper. A settled
+  room keeps its floor: a solid 6 px dark-teal ring inside its walls, the ghost's content face
+  and its swatch's tick say "settled" (no wash). Marks and lines dark ink, each with a halo of
+  its floor. Furniture is a bookshelf; the lamp an amber disc with rays and a brown outline. The
+  floors are tests (`tests/contrast.test.ts`): walls ≥ 4.5:1 against every floor in every state
+  (plain and lit); neighbours ≥ 1.3:1, ΔL* ≥ 9.5 and ΔE00 ≥ 6 for a deuteranope; any two floors
+  that may share a house ΔE00 ≥ 7; the settled ring ≥ 3:1 in normal vision, grayscale and for a
+  deuteranope; marks, lines and outlines ≥ 3:1, on average and against the floor they touch; a
+  lit cell stays closest to its own room's colour.
 - **Thumbnail at 128 px:** one ghost peeking through its fingers, one lit window.
 
 ## 5. Share
@@ -246,22 +267,24 @@ session (Munch Pixels D11).
 
 - **One rule, everything visible:** the sight lines, the light and the rooms are on screen; a
   placed ghost's glance draws its sight lines, so the rule teaches itself without text.
-- **Chaos to order:** rooms settle one by one (a dashed ring, a bob) and the progress dots fill
-  (D75), so progress reads without a number.
+- **Chaos to order:** rooms settle one by one (a flash, a solid ring, a bob and a content face)
+  and the progress dots fill and keep a tick (D75, D84), so progress reads without a number.
 - **Tension saved for a few houses:** each new element runs teach easy → test hard → rest
   (houses 4–24 in GENERATOR.md §7), then cycles of rising houses with an 8 × 8 manor (9 × 9 until
   D69: pace over area, depth from deductions) and a breather.
 - **Minute map** (brief §6a, a promise to compare with the gamer's audit): houses 1–3 in the
   first minute with the first costume at ≈ 0:53; the daily door in minute 2–3; furniture at
-  ≈ 4:20; the first interstitial allowed from 5:00; night and a music layer at house 10;
-  the first hard house at minute 8–9; chapter 2 at house 16.
+  ≈ 4:20 (the brief's house 9; since D82 house 5, earlier); the first interstitial allowed from
+  5:00; night and a music layer at house 10; the first hard house at minute 8–9 (since D82
+  house 7, earlier); chapter 2 at house 16.
 - **Durations** (brief §6a): houses 1–3 ≤ 15 s each (first win ≤ 20 s); then a median of
   30–90 s; manors up to about 120 s. The brief's own time formula (`estSeconds`) runs longer than
   these targets for boards of 6 × 6 and up (GENERATOR.md §9, A6); the first human times decide
   (Hasan's first session after the gates, then `level_complete` in the sandbox).
-- **Novelty schedule:** the rule (house 1), a costume every 3 houses, the daily (house 6),
-  furniture (9), night and a music layer (10), chapter 2 Library with the sunglasses ghost (16),
-  lamps (17), chapter 3 Cellar (31), chapter 4 Greenhouse (46), then a chapter every 15 houses.
+- **Novelty schedule:** the rule (house 1), marks (3), a costume every 3 houses, furniture (5,
+  D82), the daily (house 6), the first count (7), lamps (8), night and a music layer (10),
+  chapter 2 Library with the sunglasses ghost (16), chapter 3 Cellar (31), chapter 4 Greenhouse
+  (46), then a chapter every 15 houses.
 - **Rescue:** unlimited free undo; the hint; no fail, so a hard house never ends a session.
 - **Never run out:** 1000 houses, then the list continues from house 506 rotated, keeping the
   cycle phase (D14 as amended by D56), plus a daily house for every date to the end of 2028.
@@ -333,8 +356,9 @@ dev fakes (`?fakeads=1`, `?fakeads=fail`, `?adfast=1`).
    daily door after house 5. Digits only where the brief puts them (solve time at the win, streak,
    the door's day). **Progress dots** (D75, graybox): one per room in room-id order, in the top
    band (portrait and 1:1) or the HUD column (landscape), each a swatch of its room's floor and
-   wallpaper; a dot fills (full colour, a dark ring, a pop) when its room settles and empties when
-   it cools, so a full row is a solved house. In the finale the row gives way to the solve time.
+   wallpaper; a dot fills (full colour, a dark ring, a tick, a pop) when its room settles and
+   empties when it cools, so a full row is a solved house. The finale's solve time ticks in below
+   the board (portrait) or under the buttons (landscape), never over the dots (D85).
 3. **Pause sheet:** resume, sound, music (Epic 6).
 4. **Wardrobe:** the collected costume pieces (Epic 5).
 5. **Daily:** the same scene with the calendar mark; on a solve, the streak flame and, on web

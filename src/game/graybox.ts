@@ -13,9 +13,22 @@ import {
   COLOR_HATCH,
   COLOR_LAMP_EDGE,
   COLOR_MARK,
+  COLOR_SETTLED_RING,
   COLOR_SHELF,
+  COLOR_SOLVED_FRAME,
+  CONTENT_EYE_R,
+  CONTENT_SMILE_R,
+  CONTENT_SMILE_Y,
+  CONTENT_STROKE,
+  DOT_HALO,
+  DOT_TEXTURE,
+  DOT_TICK,
+  DOT_TICK_STROKE,
   GHOST_SHAPE as G,
   GHOST_TEXTURE,
+  HAND_SHAPE as HAND,
+  LIGHT_RING_TEXTURE,
+  MARK_HALO,
   LAMP_DISC,
   LAMP_EDGE,
   LAMP_RAYS,
@@ -23,27 +36,38 @@ import {
   LAMP_RAY_OUT,
   LAMP_RAY_WIDTH,
   MARK_SHARE,
+  PIXEL_TEXTURE,
+  SEEN_DOT,
   SHELF,
+  WIN_RING_STROKE,
 } from '../config';
 import type { GhostStatus } from '../core/state';
 
 /**
  * The graybox's drawn textures (TASKS.md Epic 3; CLAUDE.md, Rendering): every state a player must
  * tell apart is a texture of its own, never a runtime tint. Calm: open eyes on a white sheet.
- * Seen: both hands over the eyes, shiver ticks at the sides, a cool sheet. Lit: squinting under a
- * shading hand, a warm sheet. A resident wears a nightcap (an overlay). Furniture is a bookshelf
- * (an upright case with shelves and book spines), a lamp an amber disc with a brown outline and
- * rays, a mark a small dark dot without a face (D71).
+ * Content (a calm ghost in a settled room, D84): eyes closed in a smile. Seen: both hands over the
+ * eyes, shiver ticks at the sides, a cool sheet. Lit: squinting under a shading hand, a warm
+ * sheet. A resident wears a nightcap (an overlay). Furniture is a bookshelf (an upright case with
+ * shelves and book spines), a lamp an amber disc with a brown outline and rays, a mark a small
+ * dark dot without a face (D71). Marks and dots carry a ring of the floor they stand on (D85), so
+ * they come one texture per floor colour; plain rectangles (the settled ring, flashes, the veils)
+ * are a small texture of one colour, scaled. Nothing drawn on the board stays a Graphics object:
+ * WebGL would build it again every frame (round 1's code audit, ORTA 4).
  */
 export const GHOST_KEY: Record<GhostStatus, string> = {
   calm: 'gb-ghost-calm',
   seen: 'gb-ghost-seen',
   lit: 'gb-ghost-lit',
 };
+export const CONTENT_KEY = 'gb-ghost-content';
 export const CAP_KEY = 'gb-cap';
-export const MARK_KEY = 'gb-mark';
 export const FURNITURE_KEY = 'gb-furniture';
 export const LAMP_KEY = 'gb-lamp';
+/** The finale's rising tick (warm, outlined), its ring of light, and the demonstration's hand. */
+export const TICK_KEY = 'gb-tick';
+export const LIGHT_RING_KEY = 'gb-light-ring';
+export const HAND_KEY = 'gb-hand';
 
 const S = GHOST_TEXTURE;
 const HALF = S / 2;
@@ -101,6 +125,20 @@ function mitten(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
     const fx = x + k * G.fingerGap * S;
     g.lineBetween(fx, top + G.fingerWidth * S, fx, top + G.fingerLen * S);
   }
+}
+
+/** Eyes closed in two arcs and a small smile: content (D84). */
+function drawContent(g: Phaser.GameObjects.Graphics): void {
+  sheet(g, COLOR_GHOST_CALM);
+  g.lineStyle(CONTENT_STROKE * S, COLOR_GHOST_EYES, 1);
+  for (const side of [-1, 1]) {
+    g.beginPath();
+    g.arc(HALF + side * G.eyeDX * S, G.eyeY * S, CONTENT_EYE_R * S, Math.PI, 0, false);
+    g.strokePath();
+  }
+  g.beginPath();
+  g.arc(HALF, CONTENT_SMILE_Y * S, CONTENT_SMILE_R * S, 0, Math.PI, false);
+  g.strokePath();
 }
 
 function drawGhost(g: Phaser.GameObjects.Graphics, state: GhostStatus): void {
@@ -206,18 +244,66 @@ function drawLamp(g: Phaser.GameObjects.Graphics): void {
   g.strokeCircle(HALF, HALF, LAMP_DISC * S);
 }
 
-function drawMark(g: Phaser.GameObjects.Graphics): void {
-  g.fillStyle(COLOR_MARK, 1);
-  g.fillCircle(HALF, HALF, MARK_SHARE * S);
+/** A check mark through `points` (shares of `r` around (cx, cy)), as a thick polyline. */
+function check(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: number): void {
+  g.beginPath();
+  DOT_TICK.forEach(([x, y], k) => {
+    if (k === 0) g.moveTo(cx + x * r, cy + y * r);
+    else g.lineTo(cx + x * r, cy + y * r);
+  });
+  g.strokePath();
+}
+
+/** The finale's tick: a warm check mark with a dark outline, readable on every floor. */
+function drawTick(g: Phaser.GameObjects.Graphics): void {
+  const r = HALF * (1 - DOT_TICK_STROKE);
+  g.lineStyle(2 * DOT_TICK_STROKE * S, COLOR_GHOST_OUTLINE, 1);
+  check(g, HALF, HALF, r);
+  g.lineStyle(DOT_TICK_STROKE * S, COLOR_SOLVED_FRAME, 1);
+  check(g, HALF, HALF, r);
+}
+
+/** A ring of light, its stroke WIN_RING_STROKE of its diameter; the finale scales it out. */
+function drawLightRing(g: Phaser.GameObjects.Graphics): void {
+  const w = WIN_RING_STROKE * LIGHT_RING_TEXTURE;
+  g.lineStyle(w, COLOR_SOLVED_FRAME, 1);
+  g.strokeCircle(LIGHT_RING_TEXTURE / 2, LIGHT_RING_TEXTURE / 2, LIGHT_RING_TEXTURE / 2 - w);
+}
+
+/**
+ * A hand pointing up with one finger (the drag-to-mark demonstration, D83; shown see-through): a
+ * dark outline, then the white palm and finger inside it.
+ */
+function drawHand(g: Phaser.GameObjects.Graphics): void {
+  const shape = (pad: number): void => {
+    g.fillRoundedRect(
+      HAND.palmX * S + pad,
+      HAND.palmY * S + pad,
+      HAND.palmW * S - 2 * pad,
+      HAND.palmH * S - 2 * pad,
+      HAND.round * S,
+    );
+    g.fillRoundedRect(
+      HAND.fingerX * S + pad,
+      HAND.fingerY * S + pad,
+      HAND.fingerW * S - 2 * pad,
+      HAND.fingerH * S,
+      (HAND.fingerW * S) / 2 - pad,
+    );
+  };
+  g.fillStyle(COLOR_GHOST_OUTLINE, 1);
+  shape(0);
+  g.fillStyle(COLOR_GHOST_HANDS, 1);
+  shape(HAND.outline * S);
 }
 
 /** Makes the graybox textures once per game (scene restarts reuse them). */
 export function makeGrayboxTextures(scene: Phaser.Scene): void {
-  const make = (key: string, draw: (g: Phaser.GameObjects.Graphics) => void): void => {
+  const make = (key: string, draw: (g: Phaser.GameObjects.Graphics) => void, size = S): void => {
     if (scene.textures.exists(key)) return;
     const g = scene.make.graphics({}, false);
     draw(g);
-    g.generateTexture(key, S, S);
+    g.generateTexture(key, size, size);
     g.destroy();
   };
   for (const state of ['calm', 'seen', 'lit'] as const) {
@@ -225,8 +311,78 @@ export function makeGrayboxTextures(scene: Phaser.Scene): void {
       drawGhost(g, state);
     });
   }
+  make(CONTENT_KEY, drawContent);
   make(CAP_KEY, drawCap);
   make(FURNITURE_KEY, drawFurniture);
   make(LAMP_KEY, drawLamp);
-  make(MARK_KEY, drawMark);
+  make(TICK_KEY, drawTick);
+  make(LIGHT_RING_KEY, drawLightRing, LIGHT_RING_TEXTURE);
+  make(HAND_KEY, drawHand);
+}
+
+/** The texture of a mark on a floor of colour `floor`: a dark dot in a ring of that floor (D85). */
+export function markKey(scene: Phaser.Scene, floor: number): string {
+  const key = `gb-mark-${floor.toString(16)}`;
+  if (!scene.textures.exists(key)) {
+    const g = scene.make.graphics({}, false);
+    g.fillStyle(floor, 1);
+    g.fillCircle(HALF, HALF, (MARK_SHARE + MARK_HALO) * S);
+    g.fillStyle(COLOR_MARK, 1);
+    g.fillCircle(HALF, HALF, MARK_SHARE * S);
+    g.generateTexture(key, S, S);
+    g.destroy();
+  }
+  return key;
+}
+
+/**
+ * The texture of one dot of a dotted line (a sight line, a glance, a trail) in `ink` on a floor of
+ * colour `floor`, with a ring of that floor (D85). Its texture is the dot and its halo, edge to
+ * edge: shown at `dotSize(cell)` design px across.
+ */
+export function dotKey(scene: Phaser.Scene, ink: number, floor: number): string {
+  const key = `gb-dot-${ink.toString(16)}-${floor.toString(16)}`;
+  if (!scene.textures.exists(key)) {
+    const g = scene.make.graphics({}, false);
+    const c = DOT_TEXTURE / 2;
+    g.fillStyle(floor, 1);
+    g.fillCircle(c, c, c);
+    g.fillStyle(ink, 1);
+    g.fillCircle(c, c, (c * SEEN_DOT) / (SEEN_DOT + DOT_HALO));
+    g.generateTexture(key, DOT_TEXTURE, DOT_TEXTURE);
+    g.destroy();
+  }
+  return key;
+}
+
+/** A dot's display size, halo included, in design px for a cell of `cell` px. */
+export function dotSize(cell: number): number {
+  return 2 * (SEEN_DOT + DOT_HALO) * cell;
+}
+
+/** A small texture of one colour, scaled to any rectangle (the ring, the flashes, the veils). */
+export function pixelKey(scene: Phaser.Scene, color: number): string {
+  const key = `gb-px-${color.toString(16)}`;
+  if (!scene.textures.exists(key)) {
+    const g = scene.make.graphics({}, false);
+    g.fillStyle(color, 1);
+    g.fillRect(0, 0, PIXEL_TEXTURE, PIXEL_TEXTURE);
+    g.generateTexture(key, PIXEL_TEXTURE, PIXEL_TEXTURE);
+    g.destroy();
+  }
+  return key;
+}
+
+/** The swatch's tick (D84): a check in the settled ring's teal, in a texture of `size` texels. */
+export function swatchTickKey(scene: Phaser.Scene, size: number): string {
+  const key = `gb-swatch-tick-${String(size)}`;
+  if (!scene.textures.exists(key)) {
+    const g = scene.make.graphics({}, false);
+    const r = size / 2;
+    g.lineStyle(DOT_TICK_STROKE * r, COLOR_SETTLED_RING, 1);
+    check(g, r, r, r * (1 - DOT_TICK_STROKE));
+    g.generateTexture(key, size, size);
+    g.destroy();
+  }
+  return key;
 }

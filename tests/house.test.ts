@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { HOUSE_N_MAX as N_MAX, HOUSE_N_MIN as N_MIN } from '../src/config';
-import { fromRows, houseErrors, parseHouse, rotate, sees, type HouseData } from '../src/core/house';
+import {
+  fromRows,
+  houseErrors,
+  parseHouse,
+  rotate,
+  sees,
+  shadowsOf,
+  type HouseData,
+} from '../src/core/house';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import { Rng } from '../src/gen/rng';
 import {
@@ -200,6 +208,30 @@ describe('light (GDD §3: a lamp lights its row and column up to the first block
         expect(h.candidate[i]).toBe(d.objects[i] === '.' && !bruteLit(d.n, d.objects, i));
       }
     }
+  });
+});
+
+describe("shadows (house 10's lesson and its demonstration, D81, D83; round 2's code audit, DÜŞÜK 10)", () => {
+  const row0 = (first: string): string => first + '.'.repeat(20);
+
+  it("past the first bookshelf in a lamp's row and column, up to the edge or the next lamp; up, left, right, down", () => {
+    // a lamp at (1,0): a shelf at (1,2) hides (1,3) and (1,4); one at (3,0) hides (4,0)
+    const objects = ['.....', 'L.F..', '.....', 'F....', '....L'].join('');
+    expect(shadowsOf(5, objects, 5)).toEqual([
+      { cell: 8, shelf: 7 },
+      { cell: 9, shelf: 7 },
+      { cell: 20, shelf: 15 },
+    ]);
+  });
+
+  it('a second shelf adds no shadow of its own; another lamp ends the walk', () => {
+    expect(shadowsOf(5, row0('LF.F.'), 0)).toEqual([
+      { cell: 2, shelf: 1 },
+      { cell: 4, shelf: 1 },
+    ]);
+    expect(shadowsOf(5, row0('L.FL.'), 0)).toEqual([]);
+    expect(shadowsOf(5, row0('L.F.L'), 0)).toEqual([{ cell: 3, shelf: 2 }]);
+    expect(shadowsOf(5, row0('L....'), 0)).toEqual([]);
   });
 });
 

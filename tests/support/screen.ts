@@ -1,5 +1,6 @@
 import type { HouseModel } from '../../src/core/house';
 import type { GhostStatus, PlayEvent, PlayState } from '../../src/core/state';
+import type { MoveKind } from '../../src/game/session';
 
 /** The board as the rules hold it: ghosts with their states, marks, settled rooms, solved. */
 export interface View {
@@ -44,8 +45,9 @@ const PHASE: Record<PlayEvent['type'], number> = {
  *   blocked cell, on another ghost or in a room that already holds one, and a given never leaves;
  * - a mark changes only as a stroke of its own (the whole list), or right after the move that
  *   causes it: off where a ghost lands, on again where an undone ghost leaves;
- * - a nudge is the whole list, and what nudges is furniture, a lamp or a ghost (a given, or a
- *   ghost carried where it may not go, which goes back, D72);
+ * - a nudge is the whole list, and what nudges is furniture, a lamp, a given, or, only in a drag
+ *   (`kind`), a ghost carried where it may not go, which goes back (D72; round 1's code
+ *   audit, DÜŞÜK 8);
  * - every ghost that was placed or moved gets one state; any other ghost gets one only when its
  *   state really changed; `from` is what the screen shows; `by` and `lamps` agree with the state;
  * - after the list, no ghost lacks a state, no mark lies under a ghost, the lit rooms are exactly
@@ -68,7 +70,8 @@ export class Screen {
     this.solved = start.solved;
   }
 
-  play(events: readonly PlayEvent[]): void {
+  /** One move's events; `kind` is what the player did (the dev log records it with each move). */
+  play(events: readonly PlayEvent[], kind?: MoveKind): void {
     const bad = (what: string): void => {
       this.problems.push(`${what} in ${JSON.stringify(events)}`);
     };
@@ -150,6 +153,8 @@ export class Screen {
           // furniture, a lamp, a given, or a carried ghost sent back (D72)
           if (!h.blocked[e.cell] && !this.ghosts.has(e.cell)) {
             bad(`nudged ${String(e.cell)}, which is neither furniture, a lamp nor a ghost`);
+          } else if (!h.blocked[e.cell] && !isGiven(e.cell) && kind !== 'drag') {
+            bad(`the ghost at ${String(e.cell)} nudged in a ${String(kind)}, not a drag`);
           }
           break;
         case 'marked': {
