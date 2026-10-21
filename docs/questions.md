@@ -177,6 +177,49 @@ brief's generator, grader and two player models measured the numbers behind D6�
   screen), the settings come from the store. An unknown or newer version starts fresh, as in the
   kit.
 
+## 2026-10-21 (Epic 1: coder)
+
+- **D41 The events of a move, exactly** (GENERATOR.md §2 leaves the details open). Order: the
+  move's own events (`placed`, `relocated`, `removed`, `nudged`, `marked`), then `status` events
+  in reading order of the cells, then `settled` / `unsettled` by room id, then `solved`. A
+  `status {cell, from, to}` goes out for every ghost whose state changed and always for the ghost
+  that was placed or moved (`from` is null for a new ghost, the state at its old cell for a moved
+  one), so the scene can play the outcome row of GDD §3a without asking the rules; a removed ghost
+  gets none (`removed` covers it). A placement, relocation or hint onto a marked cell adds
+  `marked {cells: [cell], on: false}` right after its move event; undo plays the inverse events
+  (`removed` + the mark back, a relocation back, `placed`, the opposite `marked`). `nudged.cell`
+  is what nudges: the tapped furniture or lamp, the given, or, for a tap on an empty cell of a
+  given's room, that room's given. A property test plays every event list back on a model
+  screen and requires it to end equal to the rules (CLAUDE.md: the settled screen equals the
+  rules). Rests on GENERATOR.md §2 and GDD §3a.
+- **D42 Solved is final; a no-op is not a move.** Once every room is settled, `tap`, `stroke`,
+  `hint` and `undo` return nothing and `canUndo` is false: input locks at the win (GDD §3.2), so
+  a stray event cannot unsolve the house and `solved` is announced once. A nudge, a stroke that
+  changes no mark and a tap outside the board leave no undo entry (undo would show nothing).
+  Rests on GDD §3.1–§3.2.
+- **D43 The hint reads the house's stored solution** (GENERATOR.md §2 writes `hint(solution)`;
+  every house carries its solution). "Free candidate cells" = the room's empty, unlit cells seen
+  by no ghost; only rooms without a ghost can receive the placement (once no ghost is wrong,
+  these are exactly the unsettled rooms of a valid house). A hint is a move like any other: undo
+  takes it back (D21). Rests on GDD §3.1.
+- **D44 What the rules check in a house's data:** the structure only (side 2–9, string lengths
+  and characters, canonical base-36 ids, rooms 4-connected with ≥ 2 cells, one solution ghost per
+  room on an empty cell of it, givens distinct and on their room's solution cell). That the
+  solution obeys sight and light and is the only one is the content pipeline's proof (Gate A).
+  The format constants (`N_MIN`, `N_MAX`, `ROOM_ID_RADIX`, `ROOM_MIN_CELLS`) live in
+  `src/core/house.ts` next to the format they define, as the kit keeps its rule constants in
+  `src/core/game.ts`; the save's cell bound now derives from `N_MAX`. Segments are numbered rows
+  first in reading order, then columns column by column (T3 counts rows before columns,
+  GENERATOR.md §4.3). Rests on GENERATOR.md §1–§2.
+- **D45 `src/gen/rng.ts` arrives in Epic 1** (copied from the kit), not Epic 2: the rules'
+  property tests draw their 2,000 random houses from it. Rests on CLAUDE.md (all randomness
+  through `Rng`) and TASKS.md Epic 1 (property tests).
+- **D46 Restoring a house in progress never throws** and keeps only what fits the house: a
+  saved ghost off the board, on furniture or a lamp, in a given's room, or in a room that already
+  holds one (the lower cell wins) is left out, and so is a mark off the board or under a ghost.
+  `src/data/tutorial.ts` stores each tutorial solution as GDD §3.3 lists it; the build (Epic 2)
+  derives it again with the solver, and Gate A compares the two (A5). Rests on GDD §9 and D21.
+
 ## Open questions (defaults in force)
 
 - **For Hasan (product direction): pace or depth, if the first real times disagree with the brief?**

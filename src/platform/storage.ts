@@ -1,3 +1,4 @@
+import { N_MAX } from '../core/house';
 import { withTimeout } from './timeout';
 
 /**
@@ -10,7 +11,7 @@ import { withTimeout } from './timeout';
 export const SAVE_VERSION = 1;
 export const SAVE_KEY = 'shy-ghosts:save';
 /** Cells of the largest house (9 × 9, GDD §3): every stored ghost and mark index is below it. */
-export const CELLS_MAX = 81;
+export const CELLS_MAX = N_MAX * N_MAX;
 
 /** The house in progress (GDD §9): restored after a reload, the undo history is not (D21). */
 export interface HouseInProgress {

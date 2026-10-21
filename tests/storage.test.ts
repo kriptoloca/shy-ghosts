@@ -31,6 +31,8 @@ describe('save model v1', () => {
     });
     expect(SAVE_VERSION).toBe(1);
     expect(SAVE_KEY).toBe('shy-ghosts:save');
+    // cell indices of the largest house, 9 × 9
+    expect(CELLS_MAX).toBe(81);
   });
 
   it('migrate coerces broken fields and keeps good ones', () => {

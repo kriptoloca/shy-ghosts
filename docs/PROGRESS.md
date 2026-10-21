@@ -4,8 +4,9 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-Epic 0 done (scaffold, pipeline, platform shell) · Next: Epic 1 (core rules) · Last update:
-2026-10-21 · Branch: `main` (local, no remote)
+Epic 1 built (core rules), left uncommitted in the working tree for its review and audit
+(together with Epic 0's) · Epic 0 committed (`e5161dc`) · Next: the audit, then
+`feat(epic-1)`, then Epic 2 · Last update: 2026-10-21 · Branch: `main` (local, no remote)
 Repo: `kriptoloca/shy-ghosts`, not created yet (Hasan's step 1). Munch Pixels is paused
 (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the core loop had no real
 decisions; this plan builds that lesson in as the fun gate (CLAUDE.md, docs/questions.md D1).
@@ -116,11 +117,48 @@ Done when: every row green; `npm run size` reports the initial download against 
 grep is clean; `code-review` and the audit have no open KRİTİK or YÜKSEK; this file updated;
 `feat(epic-0): …` committed on `main` (pushed once the repository exists).
 
+## Session plan (Epic 1 — core rules, `src/core`) — built 2026-10-21, in review
+Baseline: `e5161dc feat(epic-0)`. Left uncommitted for the auditor; the main session commits
+`feat(epic-1): …` once the review and the audit have no open KRİTİK or YÜKSEK.
+
+Tasks, in order (each started with its red test, each ended with `npm test` and `npm run check`
+green):
+1. [x] `src/gen/rng.ts`, copied from the kit (D45) [`tests/rng.test.ts`].
+2. [x] `src/core/house.ts`: `houseErrors` / `parseHouse` (structure, D44), segments, sight
+   (`sees`), light, candidates, `fromRows`, `canonicalIds`, `rotate` (D14); `src/data/tutorial.ts`
+   (GDD §3.3) [`tests/house.test.ts`].
+3. [x] `src/core/hint.ts`: `hintStep` (GDD §3.1, D43) [`tests/hint.test.ts`].
+4. [x] `src/core/state.ts`: `PlayState` with `tap`, `stroke`, `undo`, `hint` and their events
+   (D41), the state of each ghost, settled rooms, solved (D42), `serialize` / `restore` (D46)
+   [`tests/state.test.ts`, `tests/tutorial.test.ts`].
+5. [x] Property tests over 2,000 random houses [`tests/core-props.test.ts`; helpers in
+   `tests/support/`: brute-force sight, light and solutions straight from GDD §3, random houses
+   in the generator's shape, a model screen that plays the events back].
+6. [x] The save's cell bound derives from `N_MAX` (`src/platform/storage.ts`).
+7. [x] Gate: `npm run check`, `npm test`, `npm run build`, `npm run e2e` green; this file,
+   TASKS.md, docs/questions.md D41–D46.
+
+AC → test (TASKS.md Epic 1):
+
+| AC | Test | Status |
+| --- | --- | --- |
+| GENERATOR.md §2 worked example 1: sight and light | house.test › "worked example 1, cell by cell", "worked example 1: exactly the lamp column and row"; state.test › "worked example 1 …" (4 tests on the board) | green |
+| Worked example 2: relocation and the given | state.test › "worked example 2 …" (2, exact event lists) | green |
+| Worked example 3: marks and undo | state.test › "worked example 3 …" (exact event lists) | green |
+| Houses 1–3 solved by their solution taps | tutorial.test › "are solved by their solution taps in any order …"; also: one solution with the given, 2, 4 and 9 without (brute force); house 2 rows and columns; house 3 three last free cells | green |
+| Relocation, removal, nudges | state.test › "tap: …" (7: relocation within a full room, onto a mark, removal, nudges, light, cascades) | green |
+| Marks: paint, erase, cleared by a placement | state.test › "marks …" (3); worked example 3; relocation and hint onto a mark | green |
+| Undo of every move kind, a hint's included | state.test › "undo …" (2); core-props › "undo gives back exactly the board before each move …" | green |
+| Property: a random move sequence equals its replay | core-props › "… equals its replay, event for event"; "played back on a screen, the events always end equal to the rules, in a fixed order" | green |
+| Property: status flags equal a brute-force sight check | core-props › "every ghost state equals a brute-force sight and light check …"; house.test › sight and light against a brute-force walk on 300 houses up to 9 × 9 | green |
+| Rotation keeps the solution | house.test › "rotate …" (4: the turn map, whole turns only, four turns and back, solution and solution count kept) | green |
+| (added) The win; solved is final; the save round trip; broken saves | state.test › "solved", "serialize and restore …" (4); core-props › "a saved board restores …" | green |
+
 ## Epic board
 | Epic / gate | Scope | Status | Evidence |
 | --- | --- | --- | --- |
 | 0 | Scaffold, pipeline, platform shell | done (review and audit folded into Epic 1's) | `feat(epic-0)` on `main`; 25 unit tests (5 files) + 4 e2e green; check clean; build 1.46 MB (target 5 MB); audit-dist OK |
-| 1 | Core rules (`src/core`) | next | |
+| 1 | Core rules (`src/core`) | built, uncommitted, awaiting review and audit | 64 new unit tests (89 in all, 11 files) incl. 5 property tests over 2,000 random houses; worked examples 1–3 with exact events; check clean; build and 4 e2e green |
 | 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | planned | |
 | **Gate A** | GENERATOR.md §9, A1–A9 | not run | |
 | 3 | Layout and graybox loop (M1) | planned | |
@@ -139,12 +177,27 @@ grep is clean; `code-review` and the audit have no open KRİTİK or YÜKSEK; thi
   `playgama-bridge.js` 300 KB, the rest < 1 KB.
 - `npm run e2e`: 4 tests green (≈ 8 s).
 
+### Epic 1 (2026-10-21, same container)
+- `npm run check`: clean.
+- `npm test`: 89 tests in 11 files, green (≈ 5.5 s). Epic 1 adds 64: rng 3, house 19, state 28,
+  hint 4, tutorial 5, core-props 5 (each property test 0.5–1.4 s over 2,000 houses).
+- What the property tests' random sequences exercise (a throwaway count, seed 77, 2,000 houses
+  of sides 2–9, 229–270 per side): 8,567 placements, 5,991 relocations, 4,359 removals, 2,872
+  nudges, 8,722 mark events, 3,899 undos, 2,942 hints (881 placements, 2,061 removals), 5,891
+  ghosts turning seen and 3,940 turning lit, 508 moves that calmed two or more ghosts at once,
+  726 houses solved.
+- Tutorial houses (brute force): one solution each with the given, 2, 4 and 9 without, as
+  GDD §3.3 states; each solved by its solution taps in every order without a shiver.
+- `npm run build`: green, 1.46 MB (the rules are not in the bundle yet), audit OK;
+  `npm run e2e`: 4 green.
+
 The plan's prototype numbers, which set Gate A's thresholds, are in GENERATOR.md §10; Epic 2
 re-measures them with the real code here ("Measured (Epic 2)").
 
 ## Reviews and audits
-None yet: Epic 0's `code-review` and adversarial audit are folded into Epic 1's (the auditor
-reviews the Epic 0 commit and the Epic 1 working tree together).
+None yet: Epic 0's `code-review` and adversarial audit are folded into Epic 1's. The auditor
+reviews `git diff a2b713a` (the Epic 0 commit plus the Epic 1 working tree) against GDD.md,
+GENERATOR.md and CLAUDE.md.
 
 ## Hasan's steps (outside the code)
 - [ ] Create the GitHub repository `kriptoloca/shy-ghosts` (public, like the others) and give the
@@ -153,9 +206,15 @@ reviews the Epic 0 commit and the Epic 1 working tree together).
       Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
 
 ## Next steps (in order)
-1. Epic 1 (core rules, `src/core`): TASKS.md; then its review and audit (with Epic 0's).
-2. Epic 2 (content pipeline) → **Gate A**.
-3. Epic 3 (graybox loop) → **Gate B**.
+1. Auditor: `code-review` and the adversarial audit of Epics 0 and 1; the coder closes every
+   KRİTİK and YÜKSEK red-first; then the main session commits `feat(epic-1): core rules …`.
+2. Epic 2 (content pipeline: solver, grader, players, generator, 1,000 houses + 792 dailies) →
+   **Gate A**. The rules' `parseHouse`, `sees`, `rotate`, `canonicalIds` and `fromRows` are
+   ready for it; `tests/support/brute.ts` has a brute-force solution counter to check the
+   solver against.
+3. Epic 3 (graybox loop) → **Gate B**. The scene plays `PlayEvent` lists back (D41); the model
+   screen in `tests/support/screen.ts` is the reference for the e2e that compares the settled
+   screen with the rules.
 4. Both gates passed: graybox screenshots to Hasan, then the `/test/` link; Epic 4 starts. A gate
    still failing after two tune rounds: stop, and Hasan gets the gate report with a
    recommendation (CLAUDE.md, the fun gate).

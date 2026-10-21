@@ -57,6 +57,21 @@ to what the graybox needs (D2).
   relocation, removal, nudges, marks (paint, erase, cleared by a placement), undo of every move
   kind (a hint's included); property tests over 2,000 random houses (a random move sequence equals
   its replay; status flags equal a brute-force sight check); rotation keeps the solution.
+- Status 2026-10-21: built, uncommitted for its review and audit (docs/PROGRESS.md); decisions
+  D41–D46.
+  - [x] `house.ts`: parse and validate, segments, sight, light, candidates, `fromRows`, `rotate`
+  - [x] `state.ts`: `tap`, `stroke`, `undo`, `hint` with their events; states, settled, solved;
+        `serialize` / `restore`
+  - [x] `hint.ts`; `src/data/tutorial.ts`; `src/gen/rng.ts` (moved here from Epic 2, D45)
+  - [x] worked examples 1–3 as tests (exact event lists for 2 and 3)
+  - [x] houses 1–3 solved by their solution taps (every order); unique with the given
+  - [x] relocation, removal, nudges, marks (paint, erase, cleared by a placement), undo of every
+        move kind (a hint's included)
+  - [x] property tests over 2,000 random houses: replay, events played back equal the rules,
+        brute-force states, undo, save round trip
+  - [x] rotation keeps the solution
+  - [x] `npm run check`, `npm test` (89), `npm run build`, `npm run e2e` (4) green
+  - [ ] `code-review` and the adversarial audit (the auditor), then `feat(epic-1)`
 
 ## Epic 2 — Content pipeline (M0) → Gate A
 - `gen/rng.ts` (copied), `gen/params.ts` (§7 bands and windows), `gen/solve.ts`, `gen/grade.ts`,
