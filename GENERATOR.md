@@ -1,0 +1,352 @@
+# GENERATOR.md — rules, house format, solver, grader, players, generator, Gate A
+
+Everything here is pure TypeScript (no Phaser, no clocks, no `Math.random`) under `src/core`
+(rules) and `src/gen` (content), deterministic for a seed and unit-tested. The game reads prebuilt
+houses (`src/data/levels.json`, `src/data/dailies.json`, built by `npm run levels`); it never
+generates houses on the device. Source: `briefs/shy-ghosts.md` §5; where this document fills a gap
+the brief leaves open, docs/questions.md names the decision (D-numbers). The windows in §7 are
+tuning levers; the Gate A thresholds in §9 are fixed (CLAUDE.md, the fun gate).
+
+## 1. Data
+
+### 1.1 House
+
+```ts
+type Tech = 1 | 2 | 3 | 4;
+type Role =
+  | 'tutorial' | 'teach' | 'hard' | 'breather' | 'rest' // houses 1–24, cycle breathers
+  | 'cycle-low' | 'cycle-high' | 'manor'                // cycle positions 1–3, 4–9, 10
+  | 'daily';
+interface Grade {
+  d: number;          // sum of the step weights (§4.3)
+  maxTech: Tech;      // highest technique used
+  steps: number;      // all steps, T1 to T4
+  estSeconds: number; // the brief's formula (§4.4)
+  t: [number, number, number, number]; // steps per technique, T1..T4 (added, D13)
+  episodes: number;   // deduction episodes (§4.3, added)
+}
+interface House {
+  id: number;         // 1-based position in the list; a daily's id is its day index (1–792)
+  n: number;          // 2..9
+  rooms: string;      // n² chars, the room id of each cell in base 36 (canonical ids, §1.2)
+  objects: string;    // n² chars: '.' empty, 'F' furniture, 'L' lamp
+  givens: number[];   // cell indices of the residents (tutorial houses only)
+  solution: number[]; // the cell index of the ghost of each room id
+  grade: Grade;
+  players: { naive: number; shallow: number }; // win rates (§5, added)
+  role: Role;         // added
+  seed: number;       // the winning candidate's seed (uint32)
+}
+```
+
+The brief's fields (§5.5) keep their names and meanings; `grade.t`, `grade.episodes`, `players`
+and `role` are added because Gate A reads them (D13).
+
+### 1.2 Canonical room ids
+
+Room ids are numbered in reading order of each room's first cell: the room holding cell 0 is room
+0, the next room met in reading order is room 1, and so on (D9). So the win cascade's "room-id
+order" sweeps down the house, hint ties go to the upper room, and two builds of one house always
+write the same `rooms` string. `solution` is re-indexed with the ids.
+
+### 1.3 Tutorial data
+
+`src/data/tutorial.ts` holds the three houses of GDD §3.3 as rows of room letters and one given
+each. `build-levels` turns them into houses 1–3 and grades them with T1 only.
+
+## 2. Rules (formal; `src/core/house.ts`, `src/core/state.ts`)
+
+- **Blocked** cells: furniture `F` and lamps `L`. A **row segment** is a maximal run of unblocked
+  cells in one row; a **column segment** likewise in one column. Every unblocked cell lies in
+  exactly one row segment and one column segment.
+- **Sight:** two different unblocked cells see each other ⇔ they share a row segment or a column
+  segment. Room walls do not matter, and ghosts are translucent, so a segment holds at most one
+  ghost in any solution.
+- **Light:** a cell is lit ⇔ it is unblocked and a lamp sits directly before or after its row
+  segment, or directly above or below its column segment.
+- **Candidates** (for solving): empty (`.`), unlit cells.
+- **State:** the ghost of each room (a cell or none), the givens, the marks. Derived: per ghost
+  `calm | seen | lit` (seen wins over lit when both hold, for the art; the rules only need "not
+  calm"), per room `settled`, the house `solved`.
+- **Moves** (each returns its events in order, for the scene to play back):
+  - `tap(cell)`: on an empty cell → `placed` (clears a mark there) or, when the room holds a
+    player's ghost, `relocated {from, to}`, or, when it holds a given, `nudged`; on a player's
+    ghost → `removed`; on furniture, a lamp or a given → `nudged`.
+  - `stroke(cells, mode)`: `marked {cells, on}` for the empty, ghost-free cells it covers.
+  - `undo()`: reverts the last move of any kind, a hint's included.
+  - `hint(solution)`: `removed` (the first wrong ghost in reading order) or `placed` (the
+    solution cell of the unsettled room with the fewest free candidates; ties: lower room id).
+  - Every move then emits `status {cell, from, to}` for each ghost whose state changed,
+    `settled {room}` / `unsettled {room}`, and finally `solved`.
+- **Solved** ⇔ every room holds exactly one calm ghost. With one solution per house, that is the
+  stored solution.
+
+### Worked examples (unit tests use these)
+
+1. **Sight and light** (5 × 5; rooms do not matter for sight):
+   ```
+   . . F . .
+   . . . . .
+   L . . . .
+   . . . F .
+   . . . . .
+   ```
+   Lit: (0,0), (1,0), (3,0), (4,0) (the lamp's column) and (2,1), (2,2), (2,3), (2,4) (its row).
+   Ghosts at (0,1) and (0,3) share row 0 with the bookshelf at (0,2) between them: neither sees
+   the other. (0,3) and (0,4) see each other. (0,1) and (4,1) see each other down column 1, through
+   any room walls, and a third ghost at (1,1) would see both and be seen by both. (4,3) does not see
+   (0,3): the furniture at (3,3) blocks column 3. (4,1) and (4,3) see each other along row 4. A lone
+   ghost at (2,2) is lit.
+2. **Relocation and the given** (tutorial house 1, `AB / AB`, given (0,0)): `tap(0,1)` → `placed`;
+   both ghosts `seen` (row 0). `tap(1,1)` → `relocated (0,1) → (1,1)`; both `calm`, rooms 0 and 1
+   `settled`, `solved`. In a fresh copy, `tap(1,0)` → `nudged` (room 0's ghost is the given),
+   nothing else changes.
+3. **Marks and undo:** a stroke over three empty cells paints three marks (one move); a tap on one
+   of them places a ghost and clears that mark; `undo()` brings the mark back and takes the ghost
+   away; a second `undo()` removes the whole stroke.
+
+## 3. Exact solver (`src/gen/solve.ts`; brief §5.1)
+
+Backtracking over rooms, always the unsettled room with the fewest candidates first (ties: lower
+id); candidates are the room's empty, unlit cells not seen by the ghosts placed so far; it counts
+solutions and stops at 2, returning them. A node limit (2,000,000) guards the build: hitting it
+fails the build loudly instead of guessing (never a time limit, so `levels:check` stays
+byte-stable). Also used by the teaching tests (§9, A5) and by the auditor.
+
+## 4. Grader (`src/gen/grade.ts`; brief §5.2)
+
+### 4.1 Candidates
+
+At the start the candidates are the empty, unlit cells; the givens are placed first. **T0**
+(weight 0, automatic) after every placement: remove every cell the new ghost sees and the rest of
+its room (the room is settled).
+
+### 4.2 Techniques
+
+| Technique | Rule | Weight |
+| --- | --- | --- |
+| T1 | an unsettled room with exactly one candidate: place it | 1 |
+| T2 | a candidate x whose ghost would see every candidate of some other unsettled room: remove x (this covers T3 with k = 1) | 3 |
+| T3 | k unsettled rooms (k = 2 … 4) whose candidates all lie inside exactly k row segments, or inside exactly k column segments (never mixed: a ghost at a crossing would sit in two segments): those segments hold these rooms' ghosts, so every candidate of the other rooms inside them is removed; it counts only when it removes something | 4 + k |
+| T4 | contradiction at depth 1: if placing a ghost on x and repeating T0–T1 until nothing changes leaves an unsettled room with no candidate, remove x | 8 |
+
+### 4.3 Step accounting (D11)
+
+- The grader applies the cheapest technique that makes progress, one **step** at a time, and
+  starts again from T1 after every step. A step is one technique instance: one placement (T1),
+  one removed cell (T2, T4), or one set of k rooms with all its removals (T3).
+- Instance order, so every build agrees: T1 by room id; T2 and T4 over the candidates of the room
+  with the fewest candidates first (ties: lower id), cells in reading order; T3 by k ascending,
+  rows before columns, room sets in lexicographic order of their ids.
+- **Grade:** `d` = the sum of the weights; `maxTech`; `steps`; `t` = the steps per technique;
+  `episodes` = the number of maximal runs of non-T1 steps in the path (each run is a moment where
+  placing stops and the player must deduce).
+- A house is **finished within its band** when the grader solves it with the band's techniques
+  (§7), with at most one T4 step in a manor. Anything else is rejected: no guessing.
+
+### 4.4 Estimated solve time (brief formula, unchanged; D18)
+
+`estSeconds = 4·T1 + 8·T2 + 15·T3 + 25·T4 + 1.5·(empty cells)`. The scan term dominates: 1.5 s per
+empty cell is about 35–120 s of every estimate from 5 × 5 to 9 × 9, and it makes the tutorial houses
+10, 21.5 and 36 s against the brief's "≤ 15 s each". It is the first constant to calibrate with
+human times (Hasan's first session after the gates, then `level_complete` after the launch).
+Gate A therefore uses it for bounds and order (§9, A6), not as a promise of seconds.
+
+### 4.5 Fixtures: one per technique where it is the first that applies (verified for this plan)
+
+Rows top to bottom, one letter per room; `.` empty, `F` furniture.
+
+- **T2** — rooms `AAAA / BCAA / BCCA / DDCA`, no objects. No room starts with one candidate. Room
+  B, (1,0) and (2,0), lies in column 0, so a ghost at (3,0) (room D) would see both: (3,0) is
+  removed (T2), D's last cell (3,1) is placed, and T1 finishes. Path T2 T1 T1 T1 T1, d = 7;
+  solution (0,3), (1,0), (2,2), (3,1). With T1 alone the grader is stuck at the start.
+- **T3** — rooms `ABBB / AABB / CCDB / CDDD`, objects `...F / .... / .... / ...F`. No T1 or T2
+  at the start. Rooms C and D keep every candidate in rows 2 and 3 (two row segments; row 3 ends
+  at the bookshelf), so those rows hold C's and D's ghosts and B's cell (2,3) is removed (T3,
+  k = 2). Path T3 T3 T2 T2 T1 T1 T1 T1, d = 22; solution (0,0), (1,3), (2,1), (3,2). With
+  techniques up to T2 the grader is stuck at the start.
+- **T4** — rooms `ABBC / ABCC / ACCD / ADDD`, objects `.... / .... / F... / ...F`. No T1, T2 or T3
+  at the start. A ghost at (0,0) would leave B only (1,1), then C only (2,2), and D nothing: (0,0)
+  is removed (T4). Path T4 T4 T2 T4 T2 T4 T1 T1 T1 T1, d = 42; solution (3,0), (0,1), (1,2),
+  (2,3). With techniques up to T3 the grader is stuck at the start.
+
+## 5. Player models (`src/gen/players.ts`; D17)
+
+The Munch Pixels lesson: a level list tuned against a random tapper hid that nothing needed a
+decision. Here difficulty is checked against players who follow the visible rule but do not
+deduce.
+
+| Player | Policy | Stands for |
+| --- | --- | --- |
+| `blind` | one ghost per room on a uniformly random empty cell, ignoring every shiver; exact win probability Π 1/(empty cells of the room) | the floor (≈ 0 by construction) |
+| `naive` | sees the shiver: never leaves a ghost on a seen or lit cell (T0); places a room's last free cell (T1); otherwise guesses a uniformly random free cell of the unsettled room with the fewest free cells (ties uniform); never undoes; loses when an unsettled room has no free cell | a player who learned the rule and does not deduce — the counterpart of Munch Pixels' "edge" bot |
+| `shallow` | as `naive`, plus T2 (one-step lookahead) before any guess | a player who sees direct consequences but does not count |
+| expert | the grader (§4) | always wins, by construction |
+
+Win rates use 400 seeded playouts per player and house (standard error ≤ 0.025); seeds
+`hashSeed('shy-ghosts/players/level/<id>/<player>')` and
+`hashSeed('shy-ghosts/players/daily/<date>/<player>')`. The selection uses the same measurement it
+stores, so no stored house lands outside its window.
+
+## 6. Generator (`src/gen/generate.ts`; brief §5.3)
+
+1. Take the band's parameters (§7). Draw the lamp and furniture counts and place lamps, then
+   furniture, on distinct random cells; compute the segments and the lit cells.
+2. Draw the room count R from the band's range, capped by both the number of row segments and the
+   number of column segments (no house can hold more ghosts than either; D19).
+3. Pick a solution: R empty, unlit cells, no two seeing each other (randomized backtracking, node
+   limit 4,000, else reject the candidate).
+4. Grow the rooms from the solution cells by randomized flood fill until every cell, furniture and
+   lamps included, belongs to a room: each step adds an unassigned cell next to a room, choosing
+   the room with weight 1 / size² (keeps sizes even). Reject if a room has fewer than 2 cells or
+   more than 2.5 × the average size. Renumber the rooms canonically (§1.2).
+5. Run the exact solver. While a second solution exists: take a cell c that the second solution
+   uses and the stored one does not, and move it into a 4-adjacent different room Y, keeping c's
+   old room connected with ≥ 2 cells and Y ≤ 2.5 × the average (Y now holds two ghosts of that
+   second solution, so it breaks). Up to 200 moves, then reject the candidate.
+6. Grade it with the band's techniques and check the band's windows (§7) in a staged order: D and
+   techniques first, then the teaching tests (houses 4, 9, 17), then the players (the costly part)
+   last.
+
+**Seeds and selection** (D15). Candidate k = 0 uses the brief's seed,
+`hashSeed('shy-ghosts/level/<id>')` (dailies `hashSeed('shy-ghosts/daily/<YYYY-MM-DD>')`);
+candidate k ≥ 1 appends `/<k>`. The first candidate that meets every window wins; houses 4, 9 and
+17 (the first of a new element) take the lowest d among the first 50 qualifying candidates (ties:
+lower k). A manor is built after the other houses of its cycle, so "above every other house of its
+cycle" can be checked. No winner in 2,000 candidates fails the build loudly.
+
+## 7. Bands and selection windows (`src/gen/params.ts`)
+
+Brief §5.4 for houses 1–24; the cycles, the daily and the extra selection rules are this plan's
+(D6–D8, D10, D16). "Episode ≥ 1" means at least one deduction episode (§4.3).
+
+| Houses | Role | N | Rooms | Furniture | Lamps | Techniques | D window | Further rules |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1–3 | tutorial | 2, 3, 4 | N | 0 | 0 | T1 only | — | data (GDD §3.3) |
+| 4–8 | teach | 5 | 5 | 0 | 0 | ≤ T2 | 4–12 | episode ≥ 1; house 4: lowest d of 50 |
+| 9–11 | teach | 5 | 5–6 (house 9: 6) | 1–2 | 0 | ≤ T2 | 6–14 | episode ≥ 1; house 9: two solution ghosts share a line with furniture between, lowest d of 50 |
+| 12–14 | hard | 6 | 6–7 | 2–3 | 0 | T3 required | 14–24 | naive ≤ 0.35 |
+| 15–16 | breather | 5 | 5–6 | 1–2 | 0 | ≤ T2 | 6–12 | episode ≥ 1 |
+| 17–19 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | episode ≥ 1; house 17: the light is necessary (the lamp as furniture gives ≥ 2 solutions), lowest d of 50 |
+| 20–22 | hard | 7 | 7–8 | 1–3 | 1–2 | T3 required | 18–30 | naive ≤ 0.35 |
+| 23–24 | rest | 6 | 6 | 0–1 | 1 | ≤ T2 | 8–14 | episode ≥ 1 |
+| cycle positions 1–3 | cycle-low | 7 | 7–10 | 0–5 | 0–3 | ≤ T3 | [12 + 6r, 22 + 8r] | naive ≤ 0.35 |
+| positions 4–9 | cycle-high | 7 or 8 | N to N+3 | 0–5 | 0–3 | T3 required | [18 + 8r, 32 + 10r] | naive ≤ 0.35 |
+| position 10 | manor | 9 | 9–12 | 0–5 | 0–3 | T3 required, ≤ 1 T4 step | [33 + 10r, 50 + 15r] | d above every other house of its cycle; naive ≤ 0.25 |
+| position 11 | breather | 6 | 6–9 | 0–5 | 0–3 | ≤ T2 | 6–14 | episode ≥ 1 |
+| daily | daily | 7 or 8 | N to N+2 | 1–4 | 0–2 | ≤ T3 | 20–34 | naive ≤ 0.35 |
+
+- **Cycles** (D6): from house 25, periods of 11 houses: ten cycle positions (1–3 at 7 × 7, 4–9 at
+  7 × 7 or 8 × 8, 10 = a 9 × 9 manor) and then the 6 × 6 breather the brief puts after the manor.
+  Cycle `c = floor((id − 25) / 11)`, position `p = (id − 25) mod 11 + 1`. Manors: houses
+  34 + 11c (34, 45, …, 991; 88 of them); breathers 35 + 11c. Houses 993–1000 are positions 1–8 of
+  cycle 88.
+- **Rising per cycle to a cap** (D7): `r = min(c, 10) / 10`; window bounds rounded to integers.
+  Cycle 0: [12, 22], [18, 32], [33, 50]; from cycle 10 (house 135) on: [18, 30], [26, 42], [43, 65].
+- **T4** (D8): allowed only in manors, at most one step, not required.
+- **Daily** (D10): N = 7 or 8 by the seed; the window 20–34 sits on the middle (27) of the regular
+  cycle houses' full range (12 at cycle 0's positions 1–3 to 42 at the capped positions 4–9).
+- **After house 1000** (D14): house k > 1000 is house `501 + ((k − 1001) mod 500)` turned by
+  `(1 + floor((k − 1001) / 500)) mod 4` quarter turns ((r, c) → (c, n − 1 − r) per turn; room ids
+  re-canonicalized). The rules are symmetric, so the solution and the grade carry over (tested).
+
+## 8. Export and the build (`scripts/levels.mjs`)
+
+- `npm run levels` loads `src/gen/build-levels.ts` through Vite's SSR module loader (as the Munch
+  Pixels kit does) and writes `src/data/levels.json` (houses 1–1000, an array) and
+  `src/data/dailies.json` (an object keyed by `YYYY-MM-DD` for 2026-11-01 … 2028-12-31, 792
+  entries), one house per line with sorted keys, so diffs stay readable and bytes stable. It
+  prints per band: the median and p10/p90 of d, estSeconds, naive and shallow; the technique
+  counts; candidates per house; the build time.
+- `npm run levels:check` rebuilds in memory and fails on any byte difference (CI step). From
+  2028-11-01 it also prints a CI warning that the daily range ends on 2028-12-31.
+- `.prettierignore` lists both files; `.gitattributes` keeps LF.
+- Prototype cost (one core): a 9 × 9 candidate ≈ 0.05 s; houses 4–80 with every rule of §7 in 5 s
+  (5.6 candidates per house on average). Expect the whole build in a few minutes, inside the
+  brief's 10-minute budget.
+
+## 9. Gate A (closes Epic 2)
+
+Fixed thresholds (CLAUDE.md, the fun gate). A1–A8 are tests in `tests/gate-a.test.ts` (and the
+files it imports) over the built files; A9 is the auditor's. "Mid and late houses" = houses
+12–1000 and every daily (1,781 houses).
+
+| # | What | Threshold |
+| --- | --- | --- |
+| A1 | Unique solutions | every house 1–1000 and every daily has exactly one solution (solver stopped at 2), equal to the stored one; houses 1–3 with their givens: 1,792 of 1,792 |
+| A2 | No guessing at any band | the grader finishes every house within its band (§4.3): 1,792 of 1,792; no T4 outside manors, never more than one per manor |
+| A3 | Technique mix per band | houses 1–3: T1 only. Every generated house: ≥ 1 deduction episode. Teach, rest and breather houses: maxTech 2 (100 %). Hard houses, cycle positions 4–9 and manors: maxTech ≥ 3 (100 %). No T3 before house 12. Dailies: ≤ T3, T3 in ≥ 40 %. Reported: T3 share of positions 1–3, T4 share of manors |
+| A4 | Deduction depth curve (d) | every d inside its window. Teach easy → test hard → rest, as band medians: 4–8 < 12–14 > 15–16; 17–19 < 20–22 > 23–24; each cycle's breather below its positions 4–9 median. The 10-house moving average: MA(50) ≥ 1.4 × MA(13), and over houses 13–50 it never falls more than 6 below its running best. Every manor's d above every other house of its cycle (88 of 88). Rising per cycle to a cap: mean d of cycles 0–2 < cycles 4–6 < cycles 8–10, and every cycle from 10 on within ±15 % of the mean of cycles 10–87. (Only pairs whose windows cannot overlap are compared house band to house band: 20–22 and cycle 0 share most of their windows, and the prototype put cycle 0's positions 4–9 at a median of 22 against 26 for 20–22.) |
+| A5 | Tutorial teaches each rule in order | houses 1–3 equal the GDD §3.3 data, T1 only, one solution with the given (2, 4 and 9 without). House 1: (0,1) lies in room B and in the given's row. House 2: its path removes a candidate by the given's row and one by its column before the T1 steps that need them. House 3: three T1 steps, the first enabled by the given and each later one by the ghost placed just before. House 4: no given, furniture or lamp; its first step is T2. No furniture before house 9; house 9's solution has two ghosts in one row or column with furniture between them. No lamp before house 17; house 17's light is necessary (the lamp as furniture gives ≥ 2 solutions). First T3 at house 12; T4 first possible at house 34 |
+| A6 | Estimated solve time per band (estSeconds, §4.4) | band medians: 4–11 ≤ 90 s; 12–14 ≤ 130 s; 15–16 ≤ 85 s; 17–19 ≤ 105 s; 20–22 ≤ 160 s; 23–24 ≤ 100 s; cycle positions 1–3 ≤ 150 s; 4–9 ≤ 200 s; manors ≤ 300 s; cycle breathers ≤ 100 s; dailies 120–200 s. Every house among 1–16 ≤ 130 s (Hold: a house won about every 2 minutes in the first session). The brief's human targets are reported next to these, not gated |
+| A7 | A naive player fails most mid and late houses | naive ≤ 0.35 on every hard house, cycle positions 1–9 and daily; ≤ 0.25 on every manor. Over all mid and late houses: mean naive ≤ 0.25, and naive < 0.5 on ≥ 90 % of them. Shallow ≤ 0.60 on every house whose grade uses T3, mean ≤ 0.40 over them. Blind ≤ 0.01 on every generated house. Teach, rest and breather houses: reported, not capped |
+| A8 | Reproducible, in budget | `npm run levels` ≤ 10 minutes on the CI runner; `levels:check` byte-identical; same seed → same house; 792 dailies on UTC dates 2026-11-01 … 2028-12-31; rotation after 1000 keeps one solution and the grade (houses 501–510 at 90°) |
+| A9 | Independent re-measurement | the auditor's own segment code, solver and naive player, written from scratch outside the repository, agree with the files on 200 sampled houses (40 from each of: 4–24, positions 1–3, positions 4–9 with manors, breathers, dailies): uniqueness 200 of 200, naive win rates within ±0.07 |
+
+**Gate A passes** when A1–A9 hold, the epic's `code-review` and audit have no open KRİTİK or
+YÜKSEK finding, and PROGRESS.md records the measured table. A failing threshold is fixed through
+the windows in `params.ts` or the generator's mechanics, at most two tune rounds; then the stop
+rule (CLAUDE.md).
+
+## 10. Calibration (a prototype for this plan, 2026-10-21)
+
+A throwaway prototype of §2–§6 (the brief's generator, the exact solver, the grader with §4.3's
+accounting, the naive and shallow players; not kept in the repository) was run to check that the
+brief's windows and §9's thresholds are reachable together. The Epic 2 code re-measures all of it;
+these numbers only set the thresholds.
+
+Brief windows, houses 4–24 (60 houses per band; "yield" = share of generated candidates inside the
+d window):
+
+| Band | Yield | estSeconds median | naive mean | naive < 0.5 | T3 used |
+| --- | --- | --- | --- | --- | --- |
+| 4–8 | 27 % | 74 s | 0.42 | 67 % | — |
+| 9–11 | 34 % | 72 s | 0.52 | 53 % | — |
+| 12–14 | 31 % | 111 s | 0.26 | 88 % | 38 % |
+| 15–16 | 31 % | 68 s | 0.47 | 65 % | — |
+| 17–19 | 30 % | 90 s | 0.39 | 77 % | — |
+| 20–22 | 27 % | 141 s | 0.18 | 95 % | 40 % |
+| 23–24 | 29 % | 91 s | 0.39 | 85 % | — |
+
+Every rule of §7 applied (30 houses per row; cycle 0 / cycle 10):
+
+| Row | Yield | estSeconds median | naive median |
+| --- | --- | --- | --- |
+| positions 1–3 | 19 % / 23 % | 123 / 137 s | 0.19 / 0.20 |
+| positions 4–9 (T3 required) | 8 % / 17 % | 159 / 179 s | 0.11 / 0.11 |
+| cycle breather | 27 % | 84 s | 0.47 |
+| daily | 24 % | 162 s | 0.14 (T3 in 57 %) |
+| manor with exactly one T4 required | 0.4 % / 0.9 % (6–14 s per manor) | 243 / 272 s | 0.10 / 0.04 |
+
+- The shallow player wins T3 houses with a median of 0.31–0.38 and never above 0.6.
+- Unconstrained manors use T4 in about 10 % of cases; requiring it would take most of the
+  10-minute budget, hence D8.
+- A curve simulation of houses 4–80 with every rule: MA(13) 13.3, MA(24) 15.2, MA(50) 23.7 (ratio
+  1.78); worst dip 2.7; band medians 4–8: 11, 12–14: 22, 15–16: 10.5, 17–19: 12, 20–22: 26,
+  23–24: 9, cycle 0 positions 4–9: 22; houses 1–16 at most 120 s; manors d 37–52, each its cycle's
+  top; 5 s.
+- The tutorial houses: one solution each with the given, T1 only (2, 4 and 9 solutions without).
+- House 17's teaching test: the lamp's light was necessary in 200 of 200 qualifying candidates.
+  House 9 with 6 rooms: 26 % of candidates qualify (6 ghosts in 5 rows put two in one row, so
+  furniture stands between them by construction).
+- The blind player cannot win: a 5 × 5 house with 5 rooms of about 5 cells gives it ≈ 1/3,125.
+
+## 11. Tests (Vitest)
+
+- Rules (`tests/house.test.ts`, `tests/state.test.ts`): the worked examples of §2; segments,
+  sight (stops at furniture and lamps, not at walls or ghosts), light; relocation, removal,
+  nudges; marks (paint, erase, cleared by a placement); undo of every move kind, a hint's
+  included; the win. Property tests over 2,000 random houses: the state after a random move
+  sequence equals a replay of it; the status flags equal a brute-force sight check.
+- Solver (`tests/solve.test.ts`): the tutorial houses; a known multi-solution house (tutorial
+  house 2 without its given: 4 solutions); 500 random small houses against brute force over all
+  cell choices.
+- Grader (`tests/grade.test.ts`): the three fixtures of §4.5 (path, d, solution; stuck with a
+  lower cap); house 3 by T1 only; the step accounting; estSeconds.
+- Players (`tests/players.test.ts`): determinism; the blind formula; naive wins 400 of 400 on the
+  tutorial houses and fewer on the T2 fixture.
+- Generator (`tests/gen.test.ts`): determinism; 200 seeds per band: connected rooms of ≥ 2 cells
+  and ≤ 2.5 × the average, R within the segment cap, one solution, canonical ids, counts in band.
+- Level files (`tests/levels.test.ts`, `tests/gate-a.test.ts`): §9, A1–A8.
+- Daily mapping (`tests/daily-date.test.ts`, Epic 2 for the file, Epic 5 for the door): UTC date
+  keys, one second before and after UTC midnight (03:00 in Türkiye), 792 entries.
