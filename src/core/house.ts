@@ -34,17 +34,12 @@ export interface Segment {
   cells: readonly number[];
 }
 
-/** A parsed house: everything the rules derive from the stored strings. */
-export interface HouseModel {
+/** Sight and light of a grid of objects: everything that does not depend on the rooms. */
+export interface Geometry {
   readonly n: number;
   /** n². */
   readonly size: number;
   readonly objects: readonly CellObject[];
-  /** The room id of each cell. */
-  readonly roomOf: readonly number[];
-  readonly roomCount: number;
-  /** The cells of each room id, ascending. */
-  readonly roomCells: readonly (readonly number[])[];
   /** Furniture and lamps: no ghost stands there; they stop sight and light. */
   readonly blocked: readonly boolean[];
   /** The index in `segments` of each cell's row and column segment; −1 on blocked cells. */
@@ -60,6 +55,15 @@ export interface HouseModel {
   readonly sees: readonly (readonly number[])[];
   /** Empty and unlit: where a solution ghost can stand. */
   readonly candidate: readonly boolean[];
+}
+
+/** A parsed house: everything the rules derive from the stored strings. */
+export interface HouseModel extends Geometry {
+  /** The room id of each cell. */
+  readonly roomOf: readonly number[];
+  readonly roomCount: number;
+  /** The cells of each room id, ascending. */
+  readonly roomCells: readonly (readonly number[])[];
   readonly givens: readonly number[];
   readonly solution: readonly number[];
 }
@@ -181,13 +185,27 @@ export function houseErrors(d: HouseData): string[] {
 export function parseHouse(d: HouseData): HouseModel {
   const errors = houseErrors(d);
   if (errors.length > 0) throw new Error(`invalid house: ${errors.join('; ')}`);
-  const n = d.n;
-  const size = n * n;
-  const objects = [...d.objects] as CellObject[];
   const roomOf = [...d.rooms].map(roomId);
   const roomCount = Math.max(...roomOf) + 1;
   const roomCells: number[][] = Array.from({ length: roomCount }, () => []);
   roomOf.forEach((room, i) => roomCells[room]?.push(i));
+  return {
+    ...geometry(d.n, d.objects),
+    roomOf,
+    roomCount,
+    roomCells,
+    givens: [...d.givens].sort((a, b) => a - b),
+    solution: [...d.solution],
+  };
+}
+
+/**
+ * Segments, sight and light of an n × n grid of objects ('.', 'F', 'L'; GENERATOR.md §2). The
+ * generator uses it before any room exists; `parseHouse` adds the rooms.
+ */
+export function geometry(n: number, objectString: string): Geometry {
+  const size = n * n;
+  const objects = [...objectString] as CellObject[];
   const blocked = objects.map((o) => o !== '.');
 
   const segments: Segment[] = [];
@@ -239,9 +257,6 @@ export function parseHouse(d: HouseData): HouseModel {
     n,
     size,
     objects,
-    roomOf,
-    roomCount,
-    roomCells,
     blocked,
     rowSeg,
     colSeg,
@@ -250,8 +265,6 @@ export function parseHouse(d: HouseData): HouseModel {
     lampsOf,
     sees,
     candidate: objects.map((o, i) => o === '.' && !lit[i]),
-    givens: [...d.givens].sort((a, b) => a - b),
-    solution: [...d.solution],
   };
 }
 

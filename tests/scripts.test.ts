@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
@@ -64,5 +64,48 @@ describe('audit-dist and size', () => {
 
   it('the audit fails on a compressed file', () => {
     expect(run('audit-dist.mjs', { ...clean, 'assets/index.js.gz': 'x' })).not.toBe(0);
+  });
+});
+
+/** Runs scripts/levels.mjs from a directory outside the repository; its status and output. */
+function runLevels(args: string[]): { status: number; out: string } {
+  try {
+    const out = execFileSync(process.execPath, [join(SCRIPTS, 'levels.mjs'), ...args], {
+      cwd: base,
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+    return { status: 0, out };
+  } catch (e: unknown) {
+    const x = e as { status?: number; stdout?: string; stderr?: string };
+    return { status: x.status ?? 1, out: `${x.stdout ?? ''}${x.stderr ?? ''}` };
+  }
+}
+
+interface LevelsLib {
+  LEVELS_BUDGET_SECONDS: number;
+  budgetError: (seconds: number, budget?: number) => string | null;
+}
+
+describe('levels.mjs (GENERATOR.md §8; audit 2026-10-21, DÜŞÜK 6 and YÜKSEK 2)', () => {
+  it('runs from another directory: the pipeline loads from the repository root', () => {
+    const r = runLevels(['--smoke']);
+    expect(r.out).toContain('levels: smoke OK');
+    expect(r.status).toBe(0);
+  }, 120_000);
+
+  it('fails above its time budget (A8: 10 minutes; --budget can only lower it)', async () => {
+    const r = runLevels(['--smoke', '--budget=0']);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toMatch(/over the 0 s budget/);
+    const lib = (await import(pathToFileURL(join(SCRIPTS, 'lib', 'levels.mjs')).href)) as LevelsLib;
+    expect(lib.LEVELS_BUDGET_SECONDS).toBe(600);
+    expect(lib.budgetError(600)).toBeNull();
+    expect(lib.budgetError(600.1)).toMatch(/over the 600 s budget/);
+  }, 120_000);
+
+  it('CI stops levels:check after 10 minutes', () => {
+    const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    expect(ci).toMatch(/- run: npm run levels:check\n\s+timeout-minutes: 10\n/);
   });
 });

@@ -1,16 +1,11 @@
 import Phaser from 'phaser';
 import {
-  BOOT_BAR_GAP,
-  BOOT_BAR_H,
-  BOOT_BAR_W,
-  BOOT_HOUSE_H,
-  BOOT_HOUSE_W,
-  BOOT_ROOF_H,
   BOOT_STEPS,
   COLOR_BOOT_BAR_FILL,
   COLOR_BOOT_BAR_TRACK,
   COLOR_BOOT_HOUSE,
 } from '../../config';
+import { bootLayout } from '../layout';
 import { initPlatform } from '../../platform/bridge';
 import { SaveStore } from '../../platform/storage';
 import {
@@ -40,8 +35,8 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     this.house = this.add.graphics();
-    this.track = this.add.rectangle(0, 0, BOOT_BAR_W, BOOT_BAR_H, COLOR_BOOT_BAR_TRACK);
-    this.fill = this.add.rectangle(0, 0, 1, BOOT_BAR_H, COLOR_BOOT_BAR_FILL).setOrigin(0, 0.5);
+    this.track = this.add.rectangle(0, 0, 1, 1, COLOR_BOOT_BAR_TRACK).setOrigin(0, 0);
+    this.fill = this.add.rectangle(0, 0, 1, 1, COLOR_BOOT_BAR_FILL).setOrigin(0, 0);
     const layout = (): void => {
       this.layout();
     };
@@ -60,17 +55,19 @@ export class BootScene extends Phaser.Scene {
   /** The silhouette centred on the screen, the bar below it, filled as far as the boot got. */
   private layout(): void {
     const { width, height } = this.scale.gameSize;
-    const cx = width / 2;
-    const base = (height + BOOT_HOUSE_H) / 2;
-    const left = cx - BOOT_HOUSE_W / 2;
-    const top = base - BOOT_HOUSE_H;
+    const { house, roofTop, track, fill } = bootLayout({ width, height }, this.done);
     this.house?.clear().fillStyle(COLOR_BOOT_HOUSE, 1);
-    this.house?.fillRect(left, top, BOOT_HOUSE_W, BOOT_HOUSE_H);
-    this.house?.fillTriangle(left, top, left + BOOT_HOUSE_W, top, cx, top - BOOT_ROOF_H);
-    const y = base + BOOT_BAR_GAP;
-    this.track?.setPosition(cx, y);
-    this.fill?.setPosition(left, y);
-    if (this.fill) this.fill.width = Math.max(1, (BOOT_BAR_W * this.done) / BOOT_STEPS);
+    this.house?.fillRect(house.x, house.y, house.width, house.height);
+    this.house?.fillTriangle(
+      house.x,
+      house.y,
+      house.x + house.width,
+      house.y,
+      roofTop.x,
+      roofTop.y,
+    );
+    this.track?.setPosition(track.x, track.y).setSize(track.width, track.height);
+    this.fill?.setPosition(fill.x, fill.y).setSize(fill.width, fill.height);
   }
 
   private step(done: number): void {

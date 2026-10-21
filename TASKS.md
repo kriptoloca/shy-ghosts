@@ -107,6 +107,23 @@ to what the graybox needs (D2).
   calibration (GENERATOR.md §10); the gate verdict recorded on the epic board. A failing threshold
   gets at most two tune rounds (windows in `params.ts`, generator mechanics), then the stop rule
   (CLAUDE.md).
+- Status 2026-10-21: built and audited; A9 failed on the sampled win rates, and the audit's
+  findings are fixed in tune round 2 of 2 (D55–D58), uncommitted for A9's re-run
+  (docs/PROGRESS.md). A1–A8 green; decisions D53–D58.
+  - [x] `params.ts`, `solve.ts`, `grade.ts`, `players.ts`, `generate.ts`, `build-levels.ts`,
+        `dates.ts`, `record.ts`, `src/data/houses.ts`; `scripts/levels.mjs` and
+        `scripts/lib/levels.mjs`; `levels` and `levels:check` in package.json and CI
+  - [x] `npm run levels`: 1,000 houses and 792 dailies in 120.0 s (fails above 600 s; CI step
+        `timeout-minutes: 10`); `levels:check` byte-identical on all four files
+  - [x] the three grader fixtures; the solver against brute force; generator invariants over
+        200 seeds per band; determinism; exact win rates against hand counts, an independent
+        enumeration and 50,000 playouts
+  - [x] Gate A A1–A8 as tests over the built files (`tests/gate-a.test.ts`, 42)
+  - [x] audit fixes red first: exact rates (D55), the cycle phase past 1000 (D56), play files
+        and lazy dailies (D57), budget and root (D58), the boot bar
+  - [x] `npm run check`, `npm test` (233), `npm run build`, `npm run e2e` (4) green
+  - [ ] A9: the auditor's re-run over all houses
+  - [ ] `feat(epic-2)` once Gate A passes; otherwise the stop rule
 
 ## Epic 3 — Layout and graybox loop (M1) → Gate B
 - `game/layout.ts` (`computeLayout`, pure: HUD bands, the board square, the cell size; portrait,

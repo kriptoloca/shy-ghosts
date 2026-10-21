@@ -22,8 +22,21 @@ function tsFiles(dir: string): string[] {
   );
 }
 
-/** Gameplay and rules code: every tuning number comes from src/config.ts (or feel.ts, params.ts). */
-const NO_MAGIC = ['src/main.ts', ...tsFiles('src/core'), ...tsFiles('src/game')];
+/**
+ * Files that hold the published constants of an algorithm, not tuning numbers: the PRNG's
+ * multipliers and shifts (mulberry32, the string hash) and the civil-calendar arithmetic.
+ */
+const ALGORITHM_CONSTANTS = ['src/gen/rng.ts', 'src/gen/dates.ts'];
+/** The constants files themselves. */
+const CONSTANTS_FILES = ['src/config.ts', 'src/gen/params.ts'];
+
+/** Gameplay, rules and content code: every tuning number comes from config.ts, feel.ts or params.ts. */
+const NO_MAGIC = [
+  'src/main.ts',
+  ...tsFiles('src/core'),
+  ...tsFiles('src/game'),
+  ...tsFiles('src/gen').filter((f) => ![...ALGORITHM_CONSTANTS, ...CONSTANTS_FILES].includes(f)),
+];
 
 describe('constants live in config.ts, feel.ts and params.ts (CLAUDE.md "No magic numbers")', () => {
   it.each(NO_MAGIC)('%s uses no number beyond 0, 1, 2 and ½', (path) => {

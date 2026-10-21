@@ -73,6 +73,9 @@ brief's generator, grader and two player models measured the numbers behind D6�
 - **D14 After house 1000.** House k > 1000 is house `501 + ((k − 1001) mod 500)` turned by
   `(1 + floor((k − 1001) / 500)) mod 4` quarter turns: 1001–1500 at 90°, 1501–2000 at 180°,
   2001–2500 at 270°, then unturned. The brief names only the first 90° pass. Rests on brief:233.
+  **Amended by D56 (Epic 2 audit):** house `506 + ((k − 1001) mod 495)` turned by
+  `(1 + floor((k − 1001) / 495)) mod 4` quarter turns (1001–1495 at 90°, 1496–1990 at 180°,
+  1991–2485 at 270°, then unturned), so the cycle phase runs on across every seam.
 - **D15 Seeds and selection.** Candidate 0 uses the brief's seed (`shy-ghosts/level/<id>`,
   `shy-ghosts/daily/<YYYY-MM-DD>`), candidate k ≥ 1 appends `/<k>`; the first candidate inside
   every window wins; houses 4, 9 and 17 take the lowest d among the first 50 qualifying
@@ -269,6 +272,98 @@ with the rules on 488,915 moves) and the main session's instructions behind thes
   with a space or "ü" (`fileURLToPath`); the production smoke test scans every shipped file and
   waits for the SDK's own `platform_message_sent` record of GameReady instead of sleeping. Left as
   they are, on the main session's word: the `.claude/` hooks and the Pages workflow (DÜŞÜK 9–10).
+
+## 2026-10-21 (Epic 2: coder)
+
+The content pipeline: solver, grader, players, generator, `npm run levels`, Gate A A1–A8.
+
+- **D53 Generator details GENERATOR.md §6 leaves open**, settled on the first builds.
+  (1) Step 2 caps R by the row and the column segments that still hold an empty, unlit cell (a
+  segment lit from end to end holds no ghost; refines D19) and drops the candidate ("segments")
+  when that cap is below the band's lowest room count, so no house gets fewer rooms than its band.
+  (2) Step 3's backtracking stops a branch once the open cells can no longer span enough row and
+  column segments for the ghosts still missing; without it most 7 × 7 and 8 × 8 searches ran into
+  the 4,000-node limit. (3) Step 4 draws the room by weight 1 / size², then one of its free
+  neighbors uniformly. (4) Step 5 looks for a cell to move in up to 16 other solutions
+  (`UNIQUE_FIX_ALTERNATIVES`), not only the first, whose extra cells are often all locked (a move
+  would split a room or overfill its neighbor). (5) "T3 required" means at least one T3 step in
+  the grade. (6) Houses 4, 9 and 17 keep the lowest d of the first 50 qualifying candidates; if
+  fewer than 50 qualify within the 2,000-candidate limit, the lowest of those (it never happens:
+  they took 642, 812 and 790 candidates). (7) The build fails loudly when the grader's ghosts
+  differ from the generator's solution. (8) The generator uses `ROOM_MIN_CELLS` and
+  `ROOM_ID_RADIX` from `src/config.ts`, and the technique numbers have names (`T1`–`T4` in
+  `params.ts`); `tests/source-rules.test.ts` now also holds `src/gen` to 0, 1, 2 and ½, except
+  `params.ts` and the published constants of the PRNG and the calendar (`rng.ts`, `dates.ts`).
+  The build tries 25–64 candidates per house on average and takes 134–143 s on one core.
+  Rests on GENERATOR.md §6, D15 and D19.
+- **D54 Houses 501–1000 grade the same in all four quarter turns** (tune round 1 of 2, for A8).
+  GENERATOR.md §7 says the turned houses after 1000 keep "the solution and the grade" because the
+  rules are symmetric. The solution does; the grade need not, because the grader's order (room
+  ids, cells in reading order, T3 rows before columns) does not turn with the house, so a turned
+  house can take another path. The first build failed A8: house 1001 (house 501 at 90°) graded
+  d 35 against its stored 29, and only 279 of houses 501–1000 kept their grade in all four turns
+  (178 changed at 90°, 102 at 180°, 175 at 270°). The fix is a generator rule, no threshold moved:
+  the bands from house 501 on are `turnable`, and the build keeps only candidates that grade the
+  same in every quarter turn (`gradeTurns`, after the teaching test and before the naive player).
+  221 of houses 501–1000 changed; houses 1–500 and the dailies stayed byte-identical; all 1,500
+  turned houses 1001–2500 keep one solution and the grade (a Gate A test checks each); the build
+  went from 119 s to 134–143 s. Rests on D14 and GENERATOR.md §9 (A8).
+
+## 2026-10-21 (Epic 2 audit fixes, tune round 2 of 2: coder)
+
+The auditor's independent re-check agreed with the files on every uniqueness, every grade and
+the naive policy itself, and failed A9 on sampling noise in the stored win rates (KRİTİK 1,
+YÜKSEK 2, ORTA 3, DÜŞÜK 4–7). No Gate A threshold moved.
+
+- **D55 Exact win rates** (audit KRİTİK 1 and ORTA 3; supersedes GENERATOR.md §5's 400 seeded
+  playouts and their seeds for the stored rates). A 400-playout estimate has a standard error of
+  0.025 at p ≈ 0.5, so the auditor's ±0.07 is only 2.8 of them, and the build selected on the same
+  noisy number it stored: 14 capped houses passed the 0.35 cap with exact rates of 0.354–0.375
+  (houses 103, 171, 306, 351, 440, 447, 469, 510, 846 and five dailies), and house 651 stored
+  0.5725 against an exact 0.5. `exactWinRate` (src/gen/players.ts) walks the policy over every
+  guess it can make, each weighted by its probability (a uniform room among the tied ones, then a
+  uniform free cell), with the same forced steps as a playout in between; a board met twice is
+  weighed once (keyed by its free cells, which at a guess also say which rooms are open). The
+  result is exact and deterministic to the bit; the build selects on it and stores it, for both
+  players, and the seeded playouts (`winRate`) stay only as a cross-check. All 1,792 houses take
+  0.6 s for both players (the slowest 8.6 ms; a limit of 1,000,000 boards fails loudly, never
+  silently). Tested: the T2 fixture by hand (naive 1/2, shallow 1), the T3 fixture by hand
+  (naive 5/18), an independent enumeration in exact fractions on 300 small houses
+  (`tests/support/policy.ts`, written from §5 alone), 50,000 playouts on four houses, and the
+  auditor's 0.5000 and 0.4049 for houses 651 and 486. The rebuild changed 19 houses and 11
+  dailies: the 14 over the cap (nine houses, five dailies); houses and dailies where an earlier candidate had been rejected on
+  a noisy estimate above the cap and is within it exactly (28, 69, 104, 546, 853, 894 and six
+  dailies); and 501, 503–505, which D56 no longer turns. Every other house plays as before (its
+  play record is byte-identical); only its stored rates changed, to the exact ones.
+- **D56 The turned list keeps the cycle phase** (audit DÜŞÜK 4; amends D14). House 501 is cycle
+  position 4 and 500 is not a multiple of 11, so houses 996–1006 were 11 cycle-high houses in a
+  row and 16 houses separated breathers 992 and 1008, and that recurred every 500 houses. Now
+  house k > 1000 is house `506 + ((k − 1001) mod 495)`, turned by
+  `(1 + floor((k − 1001) / 495)) mod 4` quarter turns: 495 is 45 whole cycles ending at house
+  1000 (`ROTATION_CYCLES` in params.ts), so house 1001 is position 9 like 506, 1002 a manor,
+  1003 a breather, and every house past 1000 has the position its place gives (tested over
+  1001–5455). The turn rule (D54) now covers houses 506–1000. GENERATOR.md §9's A8 example
+  "houses 501–510 at 90°" means the first ten turned houses, 1001–1010, now houses 506–515; the
+  test checks those and all 1,485 turned houses 1001–2485.
+- **D57 Play files and build metadata** (audit DÜŞÜK 5). `npm run levels` writes four files:
+  `levels.json` and `dailies.json` hold only what play needs (id, n, rooms, objects, givens,
+  solution; 197 KB and 168 KB), `levels-meta.json` and `dailies-meta.json` the grade, the exact
+  rates, the role and the seed, for the tests and the build report (no source file imports them;
+  a test checks it). `src/data/houses.ts` is what the game reads: `playHouse(k)` from
+  `levels.json`, which joins the first download (1.46 MB + 197 KB, inside the expected 2 MB), and
+  `dailyHouse(date)`, which imports `dailies.json` on first use, so Vite emits it as a chunk of
+  its own, loaded from the same origin by a relative path (a test builds it with Vite and checks
+  both). Each play file has a 256 KiB budget (tested).
+- **D58 The build's time budget and root** (audit YÜKSEK 2 and DÜŞÜK 6). `scripts/levels.mjs`
+  exits non-zero above 600 s (A8; `--budget=SECONDS` can only lower it) and the CI step has
+  `timeout-minutes: 10`. Vite's SSR loader is rooted at the repository
+  (`scripts/lib/levels.mjs`), so the script runs from any working directory; before, it failed
+  at once outside the repository root ("Failed to load url /src/gen/build-levels.ts"). `--smoke`
+  builds houses 1–5 and one daily and writes nothing; the tests run it from outside the
+  repository, once with `--budget=0` to see the budget fail it.
+- Also fixed (audit DÜŞÜK 7): the boot bar's fill started at the house's left edge instead of the
+  bar's (equal only because both are 360 px wide). The boot screen's geometry is now the pure
+  `bootLayout` (src/game/layout.ts), tested with other house widths.
 
 ## Open questions (defaults in force)
 

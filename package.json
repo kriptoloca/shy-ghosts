@@ -21,7 +21,9 @@
     "e2e": "npm run build:test && playwright test",
     "e2e:only": "playwright test",
     "zip": "npm run build && node scripts/zip.mjs",
-    "zip:only": "node scripts/zip.mjs"
+    "zip:only": "node scripts/zip.mjs",
+    "levels": "node scripts/levels.mjs",
+    "levels:check": "node scripts/levels.mjs --check"
   },
   "dependencies": {
     "@playgama/bridge": "2.3.1",

@@ -4,9 +4,13 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-Epics 0–1 done and pushed (`kriptoloca/shy-ghosts`, `main` at `fa66f51`); the audit's findings are
-fixed in `fix(epic-1): audit findings` (local, the main session pushes) · Next: Epic 2 (content
-pipeline) → Gate A · Last update: 2026-10-21 · Branch: `main`
+Epics 0–1 done and pushed (`kriptoloca/shy-ghosts`, `main` at `fa66f51`); the Epic 1 audit's
+findings are fixed in `35ebc23 fix(epic-1): audit findings` (local, the main session pushes) ·
+Epic 2 (content pipeline) built, uncommitted for its review and audit. Gate A: A1–A8 green after
+tune round 2 of 2 (round 1: D54 for A8; round 2: the audit's fixes, D55–D58, after A9 failed on
+sampling noise); A9 waits for the auditor's re-run over all houses · Next: A9 re-run →
+`feat(epic-2)` → Epic 3; if Gate A still fails, the stop rule · Last update: 2026-10-21 ·
+Branch: `main`
 Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
 core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
 docs/questions.md D1).
@@ -154,13 +158,70 @@ AC → test (TASKS.md Epic 1):
 | Rotation keeps the solution | house.test › "rotate …" (4: the turn map, whole turns only, four turns and back, solution and solution count kept) | green |
 | (added) The win; solved is final; the save round trip; broken saves | state.test › "solved", "serialize and restore …" (4); core-props › "a saved board restores …" | green |
 
+## Session plan (Epic 2 — content pipeline, `src/gen`) — built 2026-10-21, audited, fixes uncommitted for A9's re-run
+Baseline: `35ebc23 fix(epic-1): audit findings`.
+
+Risk: GENERATOR.md §7's windows and §9's thresholds not reachable together in the real code (the
+prototype sampled houses 4–80 and 30 houses per row), or the build over its 10-minute budget.
+De-risk: build the whole list early, measure every Gate A number on the files, tune only the
+generator's mechanics and the windows, at most two rounds, thresholds untouched.
+
+Tasks, in order (each with its tests, green before the next):
+1. [x] `src/gen/params.ts`: §7's bands and windows (`bandFor`, `DAILY_BAND`, `cycleOf`, D7's
+   rise) and every constant of §3–§8, named.
+2. [x] `src/gen/solve.ts`: exact solver, fewest candidates first, stops at 2, node limit
+   2,000,000 [`tests/solve.test.ts` (5): brute force on 500 random small houses].
+3. [x] `src/gen/grade.ts`: T1–T4 with §4.3's accounting, d, estSeconds, episodes
+   [`tests/grade.test.ts` (7): the three §4.5 fixtures, path for path].
+4. [x] `src/gen/players.ts`: blind (exact), naive, shallow, 400 seeded playouts
+   [`tests/players.test.ts` (4)].
+5. [x] `src/gen/generate.ts`: §6 steps 1–5 (D53) [`tests/gen.test.ts` (15): invariants over 200
+   seeds in each of 14 bands; determinism].
+6. [x] `src/gen/build-levels.ts`, `dates.ts` (UTC keys by integer arithmetic), `record.ts`
+   (`houseAt`, D14); `scripts/levels.mjs`; `levels` and `levels:check` in package.json and CI
+   [`tests/daily-date.test.ts` (3), `tests/build-levels.test.ts` (5)].
+7. [x] Gate A A1–A8 as tests over the built files [`tests/gate-a.test.ts` (42)]. The first build
+   met A1–A7 and failed A8 (house 1001 graded d 35 against 29): tune round 1, D54; green since.
+8. [x] Gate: `npm run check`, `npm test` (211), `npm run build`, `npm run e2e` (4),
+   `npm run levels:check` green; this file, TASKS.md, D53–D54. Uncommitted for `code-review`,
+   the audit and A9.
+9. [x] The audit (A9 failed on sampling noise; KRİTİK 1, YÜKSEK 2, ORTA 3, DÜŞÜK 4–7), each fix
+   red first: exact win rates selected and stored (D55) [`tests/players.test.ts` (13)]; the
+   turned list keeps the cycle phase (D56) [`tests/build-levels.test.ts` (7)]; play files and
+   metadata, lazy dailies (D57) [`tests/houses.test.ts` (6)]; the build's budget, CI timeout and
+   root (D58) [`tests/scripts.test.ts` (6)]; the boot bar (`tests/layout.test.ts` (6)). This is
+   tune round 2 of 2.
+10. [x] Rebuild (120.0 s); Gate A A1–A8 green on the exact values; `npm run check`, `npm test`
+    (233), `npm run build`, `npm run e2e` (4), `npm run levels:check` green; this file,
+    TASKS.md, D55–D58. Uncommitted for A9's re-run over all houses.
+
+AC → test (TASKS.md Epic 2):
+
+| AC | Test | Status |
+| --- | --- | --- |
+| `npm run levels`: 1,000 houses and 792 dailies in ≤ 10 minutes | the script's own timer: 120.0 s here; the script fails above 600 s and CI stops the step at 10 minutes (scripts.test › "fails above its time budget", "CI stops levels:check after 10 minutes") | green |
+| `npm run levels:check` byte-identical | the command (a CI step after `npm test`); gate-a › A8 "the four files are in the canonical byte form" | green |
+| The three grader fixtures (§4.5) | grade.test › T2, T3, T4 (exact paths and d; stuck one technique lower) | green |
+| The solver against brute force | solve.test › "agrees with brute force on 500 random small houses" | green |
+| Generator invariants over 200 seeds per band | gen.test › 14 bands × 200 seeds (band, room rules, objects, one solution) | green |
+| Determinism | gen.test › "the same seed gives the same house"; players.test; gate-a › A8 "houses 1–36 and the first 3 dailies rebuilt byte for byte" | green |
+| A1 one solution, 1,792 of 1,792 | gate-a › A1 | green |
+| A2 no guessing; T4 only in manors, at most once | gate-a › A2 (2) | green |
+| A3 technique mix | gate-a › A3 (4) | green |
+| A4 depth curve | gate-a › A4 (6) | green |
+| A5 tutorial order | gate-a › A5 (8) | green |
+| A6 estimated solve time | gate-a › A6 (11) | green |
+| A7 the naive player fails most mid and late houses | gate-a › A7 (5; the stored rates are the exact ones, re-measured on all 1,792 houses) | green |
+| A8 reproducible, in budget, the turn after 1000 | gate-a › A8 (5: bytes of the four files, ids and dates, rebuild, 1001–1010 = 506–515 at 90°, all 1,485 turned houses 1001–2485); build-levels.test › the cycle phase past 1000; `levels:check` | green |
+| A9 the auditor's re-measurement of 200 houses | the auditor: failed on the first files (sampling noise, KRİTİK 1); re-run over all houses pending | open |
+
 ## Epic board
 | Epic / gate | Scope | Status | Evidence |
 | --- | --- | --- | --- |
 | 0 | Scaffold, pipeline, platform shell | done, audited, pushed (`e5161dc`); CI and Pages green | 25 unit tests (5 files) + 4 e2e; check clean; build 1.46 MB (target 5 MB); audit-dist OK |
 | 1 | Core rules (`src/core`) | done, audited (0 KRİTİK, 0 YÜKSEK, 2 ORTA, 9 DÜŞÜK), pushed (`fa66f51`); findings fixed in `fix(epic-1)` | 124 unit tests (16 files) incl. 5 property tests over 2,000 random houses; the auditor's oracle: 488,915 moves on 16,000 houses, 0 mismatches; 4 e2e |
-| 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | planned | |
-| **Gate A** | GENERATOR.md §9, A1–A9 | not run | |
+| 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | built and audited (A9 failed: 1 KRİTİK, 1 YÜKSEK, 1 ORTA, 4 DÜŞÜK, all fixed red first, D55–D58), uncommitted for A9's re-run | 233 unit tests (24 files; Epic 2 adds 109); `npm run levels` 120.0 s; `levels:check` byte-identical; check, build (1.46 MB), e2e (4) green |
+| **Gate A** | GENERATOR.md §9, A1–A9 | A1–A8 green after tune round 2 of 2 (D54; D55–D58); A9 failed once on sampling noise, re-run open (the auditor). Still failing after this round: the stop rule | `tests/gate-a.test.ts` (42); "Measured (Epic 2)" below |
 | 3 | Layout and graybox loop (M1) | planned | |
 | **Gate B** | TASKS.md Epic 3, B1–B7 (the playtester's verdict) | not run | |
 | 4 | Feel, face and sound (M2, part 1) — only after both gates | blocked by the gates | |
@@ -191,8 +252,74 @@ AC → test (TASKS.md Epic 1):
 - `npm run build`: green, 1.46 MB (the rules are not in the bundle yet), audit OK;
   `npm run e2e`: 4 green.
 
-The plan's prototype numbers, which set Gate A's thresholds, are in GENERATOR.md §10; Epic 2
-re-measures them with the real code here ("Measured (Epic 2)").
+### Epic 2 (2026-10-21, same container): Gate A on the built files
+The prototype's numbers that set the thresholds are in GENERATOR.md §10; the real code's are
+below. "Round 2" is the final build (exact win rates, D55; the cycle-phase turn, D56); "round 1"
+is the build the auditor checked (400-playout rates, for the A7 rows re-measured exactly in
+brackets). A1–A7 passed in both rounds by the repository's own tests; A8 needed round 1 (D54);
+A9 failed on round 1's sampled rates.
+
+| # | Round 2 (final) | Round 1 | Threshold |
+| --- | --- | --- | --- |
+| A1 | 1,792 of 1,792 with exactly one solution, the stored one | same | 1,792 of 1,792 |
+| A2 | 1,792 of 1,792 finished within their band, each reproducing its stored grade; no T4 outside manors; none with two | same | all; 0; 0 |
+| A3 | houses 1–3 T1 only; ≥ 1 episode in 1,789 of 1,789; teach, rest, breather at maxTech 2: 103 of 103; hard, positions 4–9, manors using T3: 627 of 627; first T3 at 12; dailies at most T3, **T3 in 46.97 %** | T3 in 47.2 % | ≥ 40 % |
+| A3 reported | T3 in positions 1–3: 34.5 %; T4 in 5 of 88 manors (496, 518, 595, 804, 914), one step each | 35.2 %; the same 5 | — |
+| A4 | every d in its window (1,789); medians 4–8 **8** < 12–14 **22** > 15–16 **11.5**; 17–19 **9** < 20–22 **28** > 23–24 **10.5** | same | strict order |
+| A4 | breathers below their cycle's 4–9 median: 88 of 88; every manor above its cycle: 88 of 88 (d 35–64) | same | 88 of 88 |
+| A4 | MA(13) 12.2, MA(50) 24.1: **ratio 1.98** (MA(24) 15.3); worst fall below the running best over 13–50: **3.7** | same | ≥ 1.4; ≤ 6 |
+| A4 | cycle means 0–2 / 4–6 / 8–10: 24.24 < 27.06 < 31.12; cycles 10–88 against the mean of 10–87 (30.81): **worst −10.3 %** (cycle 21), cycle 88 (8 houses) −8.7 % | 24.24 < 27.03 < 31.12; −10.3 % | rising; ±15 % |
+| A5 | houses 1–3 = GDD §3.3, T1 only, one solution with the given, 2 / 4 / 9 without; houses 1, 2, 3 teach as specified; house 4 (d 8) no objects, first step T2; furniture first at 9, between two solution ghosts; lamp first at 17, its light necessary; first T3 at 12; first T4 at 496 | same | as listed |
+| A6 | estSeconds medians: 4–11 **70.75**; 12–14 **116.5**; 15–16 **73.25**; 17–19 **83**; 20–22 **150.5**; 23–24 **87**; positions 1–3 **137**; 4–9 **174**; manors **266.25**; cycle breathers **83**; dailies **159.25**; the longest of 1–16 116.5 s | the same, dailies 159.5 | ≤ 90; 130; 85; 105; 160; 100; 150; 200; 300; 100; 120–200; ≤ 130 |
+| A6 reported | the brief's human targets beside the formula (D18): houses 1–3 ≤ 15 s → 10 / 21.5 / 36 s; then a median of 30–90 s → 155.5 s (houses 4–1000 without manors); manors about 120 s → 266.25 s | 156.5 s; 266.25 s | not gated |
+| A7 | exact naive on hard houses, positions 1–9 and dailies: **max 0.34375**; on manors: **max 0.25** (house 320) | 0.35 sampled (**0.375 exact**: 14 over the cap); 0.25 | ≤ 0.35; ≤ 0.25 |
+| A7 | 1,781 mid and late houses: **mean naive 0.1389**; naive < 0.5 on **97.9 %** | 0.1385 (0.1390 exact); 98.5 % (97.9 % exact) | ≤ 0.25; ≥ 90 % |
+| A7 | shallow on the 1,091 houses that use T3: **max 0.5**, **mean 0.272** (median 0.259) | 1,095 houses: max 0.555 (0.5 exact), mean 0.272 | ≤ 0.60; ≤ 0.40 |
+| A7 | blind on every generated house: max 0.0012 | same | ≤ 0.01 |
+| A7 reported | teach, rest and breather houses (103): naive mean 0.410, max 0.5, < 0.5 on 58.3 % | 0.413, 0.5725, 70.9 % (sampled) | not capped |
+| A8 | `npm run levels` **120.0 s** (this container, one core); `levels:check` byte-identical on all four files; 1–36 and 3 dailies rebuilt byte for byte; 792 dailies on 2026-11-01 … 2028-12-31; 1001–1010 (506–515 at 90°) and all 1,485 turned houses 1001–2485 keep one solution and the grade; every house past 1000 keeps its cycle position | 133.7–142.6 s; two files; 501–510 and 1,500 turned houses (old mapping) | ≤ 10 min; identical; as listed |
+| A9 | the auditor's re-run over all houses | failed: rates within ±0.07 of the exact ones fell short (house 651 stored 0.5725, exact 0.5; 486 stored 0.3275, exact 0.4049) | 200 of 200 unique; naive within ±0.07 |
+
+Tune rounds (CLAUDE.md, the fun gate: at most two, thresholds fixed):
+1. **Round 1 (D54, for A8):** the first build's house 1001 graded d 35 against its stored 29;
+   houses that come back turned now grade the same in all four turns. 221 houses changed.
+2. **Round 2 (D55–D58, the audit's findings, for A9 and A7):** exact win rates, selected on
+   and stored (14 capped houses had passed the cap on a noisy estimate); the turned list keeps
+   the cycle phase; play-only files with lazy dailies; the build's 10-minute budget enforced;
+   the script rooted at the repository; the boot bar. 19 houses and 11 dailies changed. If
+   Gate A still fails after this round, the work stops and Hasan gets the gate report.
+
+Band table next to the calibration (GENERATOR.md §10; prototype in brackets; exact win rates).
+The d-window yield is the share of generated candidates (not rejected by steps 2–5) whose grade
+at the band's techniques falls inside the d window; the bands of houses 4–24 hold 2–5 houses
+each, so their columns are small samples.
+
+| Band | d median | estSeconds median | naive mean | naive < 0.5 | T3 used | d-window yield | candidates per house |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 4–8 | 8 | 65.5 s (74) | 0.43 (0.42) | 40 % (67 %) | — | 0.32 (27 %) | 151.0 |
+| 9–11 | 12 | 76 s (72) | 0.42 (0.52) | 33 % (53 %) | — | 0.33 (34 %) | 279.7 |
+| 12–14 | 22 | 116.5 s (111) | 0.07 (0.26) | 100 % (88 %) | 100 % (38 %; required since D16) | 0.22 (31 %) | 82.7 |
+| 15–16 | 11.5 | 73.25 s (68) | 0.36 (0.47) | 50 % (65 %) | — | 0.25 (31 %) | 33.5 |
+| 17–19 | 9 | 83 s (90) | 0.36 (0.39) | 100 % (77 %) | — | 0.38 (30 %) | 270.3 |
+| 20–22 | 28 | 150.5 s (141) | 0.17 (0.18) | 100 % (95 %) | 100 % (40 %; required since D16) | 0.32 (27 %) | 41.7 |
+| 23–24 | 10.5 | 87 s (91) | 0.42 (0.39) | 50 % (85 %) | — | 1.00 (29 %) | 5.5 |
+
+| Row (from house 25) | Houses | d median | estSeconds median | naive median | T3 used | d-window yield | candidates per house |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| positions 1–3 | 267 | 22 | 137 s (123 / 137 at cycles 0 / 10) | 0.14 (0.19 / 0.20) | 34 % | 0.27 (19 % / 23 %) | 45.5 |
+| positions 4–9 (T3 required) | 533 | 33 | 174 s (159 / 179) | 0.08 (0.11 / 0.11) | 100 % | 0.29 (8 % / 17 %, counted after the T3 rule) | 64.4 |
+| cycle breathers | 88 | 10 | 83 s (84) | 0.42 (0.47) | — | 0.47 (27 %) | 38.0 |
+| dailies | 792 | 27 | 159.25 s (162) | 0.125 (0.14) | 47 % (57 %) | 0.30 (24 %) | 25.3 |
+| manors (T4 allowed once, not required: D8) | 88 | 54 | 266.25 s (243 / 272 with one T4 required) | 0.03 (0.10 / 0.04) | 100 % | 0.35 (0.4 % / 0.9 % with one T4 required) | 61.9 |
+
+Also measured: the shallow player wins T3 houses with a median of 0.26 (prototype 0.31–0.38),
+never above 0.5 (0.6). Houses 1–16 at most 116.5 s (120). Houses 4, 9 and 17 took 642, 812 and
+790 candidates to find their 50 qualifying ones. The exact walk takes 0.6 s for both players
+over all 1,792 houses (the slowest house 8.6 ms). The unit tests: 233 in 24 files, ≈ 9 s (Epic
+2 adds 109: solve 5, grade 7, players 13, gen 15, daily-date 3, build-levels 7, houses 6,
+gate-a 42, layout 2, scripts 3, and 6 more source rules for `src/gen`). The build stays at
+1.46 MB because nothing imports the houses yet; `levels.json` (197 KB) will join the first
+download with Epic 3 and `dailies.json` (168 KB) loads on first use (D57).
 
 ## Reviews and audits
 ### Epics 0–1, independent audit (2026-10-21)
@@ -214,6 +341,23 @@ its own generator and grid walks) agreed with `PlayState` event for event on 488
 | DÜŞÜK 9–10 | Pages publishes `/test/` before the gates; `.claude/` hooks do not load from /home/user | left as they are, on the main session's word | — |
 | DÜŞÜK 11 | Constants outside config.ts, unnamed iOS delays, no Boot re-layout | D51: moved to `src/config.ts`, named, Boot lays out on RESIZE | `tests/source-rules.test.ts` (11; red on the committed sources) |
 
+### Epic 2, independent audit and A9 (2026-10-21)
+Verdict: Gate A not passed; A9 failed. The auditor's own solver, grader and players (no
+repository imports) agreed with the files on uniqueness (1,792 of 1,792), on every grade (1,792
+of 1,792) and on the naive policy itself (stored against exact: z mean −0.03, sd 0.98); the
+failure was the sampling noise of 400 playouts. Fixes, each with its test written first and seen
+failing (tune round 2 of 2; uncommitted for the re-run):
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| KRİTİK 1 | Each win rate was one 400-playout estimate (±0.07 is 2.8 SE at p ≈ 0.5): house 651 stored 0.5725 (exact 0.5), 486 stored 0.3275 (exact 0.4049) | D55: `exactWinRate`, a memoized walk over every guess of the policy; selected on and stored for both players | `tests/players.test.ts` (13: the T2 and T3 fixtures by hand, an independent exact-fraction enumeration on 300 houses, 50,000 playouts and the auditor's values on four houses); gate-a › A7 re-measures all 1,792 exactly |
+| YÜKSEK 2 | A8's 10-minute budget was checked nowhere | D58: the script exits 1 above 600 s; `timeout-minutes: 10` on the CI step | `tests/scripts.test.ts` (`--budget=0` fails it; the CI step's timeout) |
+| ORTA 3 | The build selected on the noisy estimate it stored: 14 capped houses above 0.35 exactly | D55 (selection on exact values); the rebuild changed 19 houses and 11 dailies | gate-a › A7 on the exact values (capped max 0.34375) |
+| DÜŞÜK 4 | Past house 1000 the cycle phase broke (11 cycle-high houses in a row at 996–1006; breathers 16 apart), every 500 houses | D56: house `506 + ((k − 1001) mod 495)`, 45 whole cycles | `tests/build-levels.test.ts` (the phase over 1001–5455, red on the old mapping for all 4,455 houses) |
+| DÜŞÜK 5 | The level files (653 KB, 47 % build metadata) would push the first download to 2.1 MB | D57: play-only `levels.json` (197 KB) and `dailies.json` (168 KB, loaded lazily by `src/data/houses.ts`); metadata in `*-meta.json` | `tests/houses.test.ts` (6: fields, 256 KiB budgets, no source imports the metadata, a Vite build puts the dailies in a chunk of their own behind a relative `import()`) |
+| DÜŞÜK 6 | `levels.mjs` gave Vite no root and failed outside the repository | D58: `scripts/lib/levels.mjs` roots Vite at the repository | `tests/scripts.test.ts` (`--smoke` from a directory outside the repository) |
+| DÜŞÜK 7 | The boot bar's fill started at the house's left edge (equal widths hid it) | the pure `bootLayout` in `src/game/layout.ts`; BootScene draws from it | `tests/layout.test.ts` (other house widths; red before the fix) |
+
 ## Hasan's steps (outside the code)
 - [x] Create the GitHub repository `kriptoloca/shy-ghosts` and give the Claude GitHub App access
       (done 2026-10-21; `main` pushed through `fa66f51`; CI and the Pages workflow ran green on
@@ -222,9 +366,15 @@ its own generator and grid walks) agreed with `PlayState` event for event on 488
       Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
 
 ## Next steps (in order)
-1. Epic 2 (content pipeline: solver, grader, players, generator, 1,000 houses + 792 dailies) →
-   **Gate A**.
-2. Epic 3 (graybox loop) → **Gate B**. Carried over from the Epic 1 audit:
+1. The auditor re-runs A9 over all houses on the uncommitted tree (exact rates now: D55), with
+   the review of the fixes. Gate A passes when A1–A9 hold and no KRİTİK or YÜKSEK is open: then
+   `feat(epic-2)` and the verdict on the board. This was tune round 2 of 2: if Gate A still
+   fails, the work stops and Hasan gets the gate report with a recommendation (CLAUDE.md).
+2. Epic 3 (graybox loop) → **Gate B**. From Epic 2: read the houses through `src/data/houses.ts`
+   (`playHouse(k)`, which turns 506–1000 after house 1000 keeping the cycle phase, D56;
+   `dailyHouse(date)`, lazy, D57); never import the `*-meta.json` files. `levels.json` adds
+   197 KB to the first download (about 1.66 MB of the 5 MB budget). Carried over from the Epic 1
+   audit:
    - after every restore, check `PlayState.solvedAtStart` and play the win (or move on) yourself:
      no `solved` event will come (D49);
    - change the save only through `recordHouseInProgress` and `advanceHouse` (D50);

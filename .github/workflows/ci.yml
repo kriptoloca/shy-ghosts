@@ -14,8 +14,11 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-      # `npm run levels:check` joins here with the content pipeline (Epic 2), the audio check
-      # with the synthesized sounds (Epic 4).
+      # The level files must be byte for byte what the code builds, within Gate A's 10 minutes on
+      # this runner (GENERATOR.md §8–§9, A8; the script also fails itself above 600 s). The
+      # audio check joins here with the synthesized sounds (Epic 4).
+      - run: npm run levels:check
+        timeout-minutes: 10
       - run: npm run build
       - run: npm run size
       - run: npm run zip:only
