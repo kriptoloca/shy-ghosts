@@ -1,0 +1,6 @@
+# LF everywhere: `npm run levels:check` compares src/data/levels.json and src/data/dailies.json
+# byte for byte (Epic 2).
+* text=auto eol=lf
+*.png binary
+*.ogg binary
+*.m4a binary

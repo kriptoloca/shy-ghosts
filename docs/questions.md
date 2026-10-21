@@ -153,6 +153,30 @@ brief's generator, grader and two player models measured the numbers behind D6�
   coder may tune, recording each change here. Rests on brief:218 ("starting values; the generator
   logs the real distributions").
 
+## 2026-10-21 (Epic 0: coder)
+
+- **D36 `sharp` is not ported yet.** The kit's `package.json` pins `sharp` 0.35.5 only for
+  `scripts/capture.mjs`; nothing before Epic 4 needs it, so it arrives with the capture (same pin,
+  with its reason line then). Every other pin is the kit's. Rests on D2 and "no new dependency
+  without a reason line".
+- **D37 The save in memory lives in `src/game/progress.ts`** (the kit's `src/game/state.ts`),
+  renamed so it is never confused with the rules' play state `src/core/state.ts`.
+- **D38 `?house=N` arrives in Epic 0** (Boot sets the house to play and drops a stale house in
+  progress), because `scripts/dev-url.mjs` prints the link and the smoke e2e drives the save path
+  with it; `?playtest=1` stays in Epic 3, where the hooks it hides arrive.
+- **D39 Bridge wrapper, two changes against the kit:** no `level_failed` message (a house cannot
+  be lost, GDD §14), and the fake-ad overlay sits behind `import.meta.env.DEV` at every call site,
+  so production builds drop its code; the smoke e2e checks that the shipped scripts mention none
+  of `__ghostDebug`, `fpsmin`, `playtest`, `fakeads` (CLAUDE.md: dev hooks and dev URL parameters
+  only inside `import.meta.env.DEV`).
+- **D40 Save v1 details** (GDD §9, D31): `current` restores only when its `id` equals `house` (a
+  stale slot never lands on another board); `ghosts` (the player's ghosts; givens belong to the
+  house data) and `marks` are distinct cell indices below 81, ascending; `seconds` keeps fractions;
+  counters are integers ≥ 0. A late first read merges as in the kit: the furthest house wins and
+  keeps its own house in progress (this session's when both are on the same house, since it is on
+  screen), the settings come from the store. An unknown or newer version starts fresh, as in the
+  kit.
+
 ## Open questions (defaults in force)
 
 - **For Hasan (product direction): pace or depth, if the first real times disagree with the brief?**

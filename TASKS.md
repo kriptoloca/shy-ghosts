@@ -36,6 +36,16 @@ to what the graybox needs (D2).
   (`sendAnalyticsEvents: false`, minimum delay 120), GameReady once; e2e smoke: boot → the Game
   stub is interactive → `game_ready` once, after `in_game_loading_started`; no external
   requests; no console errors; the production bundle carries no debug hooks.
+- Status 2026-10-21: done (`feat(epic-0)` on `main`; review and audit folded into Epic 1's).
+  - [x] configs, fresh lockfile, scripts, CI and Pages workflows, `.claude/` hooks
+  - [x] platform shell: `bridge.ts`, `storage.ts` (save v1), `host.ts`, `timeout.ts`,
+        `resume-grace.ts`, `progress.ts`, Bridge config and notes
+  - [x] Boot → Game stub, `markInteractive`, `__ghostDebug` (DEV only), `?reset=1`, `?house=N`,
+        `?renderer=canvas`, `?fpsmin=N`
+  - [x] `npm run check`, `npm test` (25), `npm run build` (1.46 MB, audit OK) green
+  - [x] unit: save v1, resume grace, Bridge config, GameReady once, `designSize`
+  - [x] e2e smoke (4): GameReady once after loading; same-origin, no console errors; no debug
+        hooks in production; `?house=N` and the save; the pause gates input
 
 ## Epic 1 — Core rules (`src/core`, pure)
 - `house.ts`: parse `rooms`/`objects`, segments, sight, light, candidates, `rotate` (houses after
