@@ -8,7 +8,8 @@ const PORT = 5173;
 const LINKS = [
   ['Fresh start, house 1', '/?reset=1'],
   ['Jump to a house', '/?house=12'],
-  ['Playtest (no solution in the hooks, Epic 3)', '/?reset=1&playtest=1'],
+  ['Gate B playtest (no solution in the hooks)', '/?reset=1&playtest=1&renderer=canvas&fpsmin=1'],
+  ['Playtest from house N (here 9)', '/?reset=1&house=9&playtest=1&renderer=canvas&fpsmin=1'],
 ];
 
 const addresses = Object.values(networkInterfaces())

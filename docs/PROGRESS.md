@@ -4,13 +4,12 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-Epics 0–1 done and pushed (`kriptoloca/shy-ghosts`, `main` at `fa66f51`); the Epic 1 audit's
-findings are fixed in `35ebc23 fix(epic-1): audit findings` (local, the main session pushes) ·
-Epic 2 (content pipeline) built, uncommitted for its review and audit. Gate A: A1–A8 green after
-tune round 2 of 2 (round 1: D54 for A8; round 2: the audit's fixes, D55–D58, after A9 failed on
-sampling noise); A9 waits for the auditor's re-run over all houses · Next: A9 re-run →
-`feat(epic-2)` → Epic 3; if Gate A still fails, the stop rule · Last update: 2026-10-21 ·
-Branch: `main`
+Epics 0–2 done and pushed (`kriptoloca/shy-ghosts`, `main` at `4cd221d feat(epic-2)`); **Gate A
+passed** (the auditor's independent code agrees on all 1,792 houses, A1–A9 hold) · Epic 3 (layout
+and graybox loop) built and audited (0 KRİTİK, 3 YÜKSEK, 3 ORTA, 5 DÜŞÜK); every finding fixed
+red-first, uncommitted for the main session's review, full gate green · **Gate B round 1 did not
+pass** (interest, Flow, readability; per the main session) · Next: the round-1 tune plan → Gate
+B again → Hasan's screenshots → Epic 4 · Last update: 2026-10-21 · Branch: `main`
 Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
 core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
 docs/questions.md D1).
@@ -158,7 +157,7 @@ AC → test (TASKS.md Epic 1):
 | Rotation keeps the solution | house.test › "rotate …" (4: the turn map, whole turns only, four turns and back, solution and solution count kept) | green |
 | (added) The win; solved is final; the save round trip; broken saves | state.test › "solved", "serialize and restore …" (4); core-props › "a saved board restores …" | green |
 
-## Session plan (Epic 2 — content pipeline, `src/gen`) — built 2026-10-21, audited, fixes uncommitted for A9's re-run
+## Session plan (Epic 2 — content pipeline, `src/gen`) — done 2026-10-21 (`4cd221d`, Gate A passed)
 Baseline: `35ebc23 fix(epic-1): audit findings`.
 
 Risk: GENERATOR.md §7's windows and §9's thresholds not reachable together in the real code (the
@@ -215,15 +214,107 @@ AC → test (TASKS.md Epic 2):
 | A8 reproducible, in budget, the turn after 1000 | gate-a › A8 (5: bytes of the four files, ids and dates, rebuild, 1001–1010 = 506–515 at 90°, all 1,485 turned houses 1001–2485); build-levels.test › the cycle phase past 1000; `levels:check` | green |
 | A9 the auditor's re-measurement of 200 houses | the auditor: failed on the first files (sampling noise, KRİTİK 1); re-run over all houses pending | open |
 
+## Session plan (Epic 3 — layout and graybox loop) — built and audited 2026-10-21, fixes uncommitted
+Baseline: `4cd221d feat(epic-2)` (Gate A passed). First the A9 re-audit's three DÜŞÜK items:
+GENERATOR.md §5, §7, §9 and GDD.md §7, §9 follow D55 and D56 (no threshold changed); GENERATOR.md
+§5 records why the exact walk fails the build at `PLAYER_STATE_LIMIT`; `scripts/size.mjs` reports
+the first download and the lazy chunks apart (`tests/scripts.test.ts`, red on the old script).
+
+Risk: a graybox that a player without rules cannot read (Gate B), or one that looks like the
+coloured grid of other region puzzles. De-risk: rooms by lightness and pattern (never hue alone),
+thick walls, every ghost state a texture of its own that differs in shape, lightness and colour,
+the cause of every shiver drawn (D59); screenshots at 9:16, 1:1 and 16:9 checked by eye; the
+e2e compares what is drawn with the rules and the strict model screen after every step.
+
+Tasks, in order (each with its tests, red first where they test a fix):
+1. [x] `computeLayout`, `cellAt`, `cellCenter` (D61) [`tests/layout.test.ts` (10): every design
+   size in 40 px steps, both orientations: cells ≥ 80 px at 9 × 9, no overlap, all on screen].
+2. [x] `src/game/look.ts`: room styles and wall runs [`tests/look.test.ts` (3): neighbours differ
+   in tone and pattern on all 1,795 houses; walls exactly between rooms].
+3. [x] `src/game/view.ts` (the scene's board picture, played back from events) and
+   `src/game/visible.ts` [`tests/view.test.ts` (6): equal to the rules after every move on
+   1,000 random houses, the strict model screen accepting every list; the text, cell by cell].
+4. [x] `src/game/gesture.ts` (taps, drags, the 24 px threshold) [`tests/gesture.test.ts` (6)];
+   `src/game/session.ts` (solve time, moves, hints, conflicts, the hint's cooldown)
+   [`tests/session.test.ts` (5)].
+5. [x] `src/game/graybox.ts` (the drawn textures), `src/game/board.ts` (the house on screen,
+   playback, read-back), `src/game/hud.ts` (undo, hint), `src/game/scenes/GameScene.ts` (the
+   loop, the win beat and slide, saves, resume, pause), `src/data/houses.ts` wired in.
+6. [x] Dev hooks: `state()` (with a per-house tally), `cellCenter(i)`, `buttonCenter(name)`,
+   `solution()` (null under `?playtest=1`), `house()`, `visible()`, `drawn()`, `rules()`,
+   `events()` (D62); `?house=N`; `scripts/dev-url.mjs` prints the playtest links.
+7. [x] E2e [`tests/e2e/graybox.spec.ts` (14)]; the source rules also hold for the new game files
+   and keep the Game scene on the save guards (D50) [`tests/source-rules.test.ts` (26)]. One e2e
+   caught a real bug: Phaser's `setInteractive` keeps an existing hit area, so after a new screen
+   size the buttons answered to their old circle; the HUD now moves the circle itself.
+8. [x] Gate: `npm run check`, `npm test` (267), `npm run levels:check`, `npm run build`,
+   `npm run e2e` (18) green; this file, TASKS.md, D59–D62.
+9. [x] The audit's findings, each red first ("Epic 3, independent audit" below; D63–D66): 26
+   unit tests and 8 e2e added, 10 e2e and the production scan extended; `npm test` (293),
+   `npm run e2e` (26) green.
+
+AC → test (TASKS.md Epic 3):
+
+| AC | Test | Status |
+| --- | --- | --- |
+| Load → house 1 interactive within 3 s | graybox.spec › "load → house 1 interactive within 3 s → houses 1–3 …" (`interactiveAt` ≤ 3,000 ms; measured ≈ 0.5 s) | green |
+| Houses 1–3 solved through real taps in under a minute; each next house starts by itself | the same test (real mouse taps at `cellCenter`, the next house slides in by itself) | green |
+| A conflict shows the seen state at once | graybox.spec › "a conflict shows the seen state at once" (drawn right after the tap) | green |
+| Relocation, removal, marks (paint, erase) and undo | graybox.spec › "relocation, removal, marks (paint, erase) and undo …" | green |
+| A reload resumes the house in progress (ghosts, marks, seconds) | graybox.spec › "a reload resumes the house in progress …" | green |
+| After rapid taps the settled screen equals the rules | graybox.spec › "after rapid taps, drags, undos and a hint …" (drawn = strict model screen = rules). Every graybox e2e that plays a move ends with the same check, and every house it finishes is replayed on the strict model screen through `previous()` (the four tests that did not before were the audit's DÜŞÜK 7) | green |
+| 9:16, 1:1 and 16:9 lay out without overlap, cells ≥ 80 px at 9 × 9 | layout.test (every design size); graybox.spec › the three aspect runs, "a new screen size mid-house …" and "the buttons follow a new screen size …" | green |
+| A platform pause freezes everything; the waking tap is ignored | graybox.spec › "a platform pause freezes the house and dims it …"; smoke.spec › "a platform pause turns input off …" | green |
+| No external requests | the `guard` fixture after every e2e test | green |
+| `solution()` is null under `?playtest=1` | graybox.spec › "?playtest=1 hides the solution …" | green |
+| (carried over) a board restored solved plays its win (D49); the save only through the guards (D50) | graybox.spec › "a house restored already solved …"; source-rules › the Game scene and the progress guards | green |
+| (carried over) the strict model screen is the reference (D52); `by` and `lamps` drive the sight line and the lamp flash (D48) | every e2e step replays `events()` on `tests/support/screen.ts`; `src/game/board.ts` `flashLines(by)`, `flashLamps(lamps)` | green |
+
+### For the Gate B playtester (TASKS.md Epic 3 protocol)
+Start the dev server with `npm run dev` (port 5173; it also prints LAN links for a phone). The
+protocol's start link is `http://localhost:5173/?reset=1&playtest=1&renderer=canvas&fpsmin=1`:
+house 1 on a fresh save; every next house slides in by itself after a solve. `?house=N` opens house
+N (with `?reset=1` on a fresh save); without `?reset=1` a reload goes on from the save. The hooks
+on `window.__ghostDebug`: `visible()` (the board as text, in words of what is drawn and never of
+the rules, D63), `state()` (house, phase, solve time, moves, hints, a per-house tally that counts
+shivering placements per move, D66), `cellCenter(i)` and `buttonCenter('undo' | 'hint')` (page px for
+aiming real taps); `solution()` is null in playtest mode.
+
+| House | URL |
+| --- | --- |
+| 1 | `http://localhost:5173/?reset=1&house=1&playtest=1&renderer=canvas&fpsmin=1` |
+| 2 | `http://localhost:5173/?reset=1&house=2&playtest=1&renderer=canvas&fpsmin=1` |
+| 3 | `http://localhost:5173/?reset=1&house=3&playtest=1&renderer=canvas&fpsmin=1` |
+| 4 | `http://localhost:5173/?reset=1&house=4&playtest=1&renderer=canvas&fpsmin=1` |
+| 5 | `http://localhost:5173/?reset=1&house=5&playtest=1&renderer=canvas&fpsmin=1` |
+| 6 | `http://localhost:5173/?reset=1&house=6&playtest=1&renderer=canvas&fpsmin=1` |
+| 7 | `http://localhost:5173/?reset=1&house=7&playtest=1&renderer=canvas&fpsmin=1` |
+| 8 | `http://localhost:5173/?reset=1&house=8&playtest=1&renderer=canvas&fpsmin=1` |
+| 9 | `http://localhost:5173/?reset=1&house=9&playtest=1&renderer=canvas&fpsmin=1` |
+| 10 | `http://localhost:5173/?reset=1&house=10&playtest=1&renderer=canvas&fpsmin=1` |
+| 11 | `http://localhost:5173/?reset=1&house=11&playtest=1&renderer=canvas&fpsmin=1` |
+| 12 | `http://localhost:5173/?reset=1&house=12&playtest=1&renderer=canvas&fpsmin=1` |
+| 13 | `http://localhost:5173/?reset=1&house=13&playtest=1&renderer=canvas&fpsmin=1` |
+| 14 | `http://localhost:5173/?reset=1&house=14&playtest=1&renderer=canvas&fpsmin=1` |
+| 15 | `http://localhost:5173/?reset=1&house=15&playtest=1&renderer=canvas&fpsmin=1` |
+| 16 | `http://localhost:5173/?reset=1&house=16&playtest=1&renderer=canvas&fpsmin=1` |
+| 17 | `http://localhost:5173/?reset=1&house=17&playtest=1&renderer=canvas&fpsmin=1` |
+| 18 | `http://localhost:5173/?reset=1&house=18&playtest=1&renderer=canvas&fpsmin=1` |
+| 19 | `http://localhost:5173/?reset=1&house=19&playtest=1&renderer=canvas&fpsmin=1` |
+| 20 | `http://localhost:5173/?reset=1&house=20&playtest=1&renderer=canvas&fpsmin=1` |
+| 27 | `http://localhost:5173/?reset=1&house=27&playtest=1&renderer=canvas&fpsmin=1` |
+| 31 | `http://localhost:5173/?reset=1&house=31&playtest=1&renderer=canvas&fpsmin=1` |
+| 34 | `http://localhost:5173/?reset=1&house=34&playtest=1&renderer=canvas&fpsmin=1` |
+
 ## Epic board
 | Epic / gate | Scope | Status | Evidence |
 | --- | --- | --- | --- |
 | 0 | Scaffold, pipeline, platform shell | done, audited, pushed (`e5161dc`); CI and Pages green | 25 unit tests (5 files) + 4 e2e; check clean; build 1.46 MB (target 5 MB); audit-dist OK |
 | 1 | Core rules (`src/core`) | done, audited (0 KRİTİK, 0 YÜKSEK, 2 ORTA, 9 DÜŞÜK), pushed (`fa66f51`); findings fixed in `fix(epic-1)` | 124 unit tests (16 files) incl. 5 property tests over 2,000 random houses; the auditor's oracle: 488,915 moves on 16,000 houses, 0 mismatches; 4 e2e |
-| 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | built and audited (A9 failed: 1 KRİTİK, 1 YÜKSEK, 1 ORTA, 4 DÜŞÜK, all fixed red first, D55–D58), uncommitted for A9's re-run | 233 unit tests (24 files; Epic 2 adds 109); `npm run levels` 120.0 s; `levels:check` byte-identical; check, build (1.46 MB), e2e (4) green |
-| **Gate A** | GENERATOR.md §9, A1–A9 | A1–A8 green after tune round 2 of 2 (D54; D55–D58); A9 failed once on sampling noise, re-run open (the auditor). Still failing after this round: the stop rule | `tests/gate-a.test.ts` (42); "Measured (Epic 2)" below |
-| 3 | Layout and graybox loop (M1) | planned | |
-| **Gate B** | TASKS.md Epic 3, B1–B7 (the playtester's verdict) | not run | |
+| 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | done, audited, pushed (`4cd221d`); tune round 2 of 2 used (D55–D58) | 233 unit tests (24 files); `npm run levels` 120.0 s; `levels:check` byte-identical |
+| **Gate A** | GENERATOR.md §9, A1–A9 | **passed** (2026-10-21): the auditor's own segment code, solver and players agree on all 1,792 houses | `tests/gate-a.test.ts` (42); "Measured (Epic 2)" below |
+| 3 | Layout and graybox loop (M1) | built; audited (0 KRİTİK, 3 YÜKSEK, 3 ORTA, 5 DÜŞÜK), every finding fixed red-first; uncommitted for the main session | 293 unit tests (32 files), 26 e2e; check, levels:check, build (first download 1.69 MB) green; "Measured (Epic 3)" below |
+| **Gate B** | TASKS.md Epic 3, B1–B7 (the playtester's verdict) | round 1 run: **not passed** (interest, Flow, readability); the round-1 tune plan is being written | the playtester's report (with the main session) |
 | 4 | Feel, face and sound (M2, part 1) — only after both gates | blocked by the gates | |
 | 5 | Meta, daily, hint and ads (M2, part 2) | blocked by the gates | |
 | 6 | Pause sheet, brand, store, release (M3) | blocked by the gates | |
@@ -321,6 +412,32 @@ gate-a 42, layout 2, scripts 3, and 6 more source rules for `src/gen`). The buil
 1.46 MB because nothing imports the houses yet; `levels.json` (197 KB) will join the first
 download with Epic 3 and `dailies.json` (168 KB) loads on first use (D57).
 
+### Epic 3 (2026-10-21, same container): the graybox
+- `npm run check`: clean. `npm test`: 267 tests in 28 files, green (≈ 10 s; Epic 3 adds 34:
+  layout 4, look 3, view 6, gesture 6, session 5, scripts 1 (size), source rules 9).
+- `npm run levels:check`: byte-identical (≈ 2 minutes).
+- `npm run build`: green, audit OK. `npm run size`: first download 1.69 MB (bundle 1,425 KB with
+  Phaser and the 197 KB `levels.json`, Bridge 300 KB), no lazy chunk yet (nothing calls
+  `dailyHouse` before Epic 5, so the dailies are not in the build at all).
+- `npm run e2e`: 18 green (smoke 4, graybox 14). The first house is interactive ≈ 0.5 s after
+  navigation (dev build, headless Chromium, Canvas renderer); the e2e that loads and then solves
+  houses 1–3 by real taps, win beats and slides included, takes 7–9 s.
+- Cell size at 9 × 9: 112.9 design px at 9:16 (≈ 41 CSS px on a 390 px wide phone) and 16:9,
+  83.6 at 1:1 (≈ 46 CSS px at 600 × 600).
+- Screenshots checked by eye (9:16 houses 1, 9, 12, 17, 9:16 close-ups of every ghost state, 1:1
+  house 34, 16:9 house 17, the win beat and the slide); scratch only, not in the repository.
+- After the audit fixes: `npm test` 293 tests in 32 files (≈ 16 s; adds visible 1, house-log 3,
+  pool 2, layout 1, motion 17, contrast 1, source rules 1 for `pool.ts`);
+  `npm run e2e` 26 green (smoke 4, graybox 22, ≈ 1.8 minutes). The rapid-tap e2e plays its 45
+  taps, undos, a drag and a hint with a handful of pooled effect drawings (made < used). The
+  production bundle no longer holds the move log, the tally or `drawn()`'s read-back.
+- Colour margins (`npx vitest run tests/contrast.test.ts --reporter=verbose`; WCAG contrast, ΔE,
+  deuteranope ΔE; no thresholds until the tune plan): walls on the darkest floor 1.43:1 (ΔE
+  18.1); neighbouring floor tones 1.27–1.30:1 (ΔE 7.3–8.1); a glowing room against the closest
+  plain tone 1.26:1 for tone 0 (ΔE 27.5, deuteranope 12.1), 1.44, 1.63 and 2.40:1 for tones 1–3;
+  marks on lit cells at least 1.96:1, on glowing cells 1.84:1, on lit cells of a glowing room
+  1.41:1.
+
 ## Reviews and audits
 ### Epics 0–1, independent audit (2026-10-21)
 Verdict: pass, 0 KRİTİK, 0 YÜKSEK. The auditor's own oracle (written from GDD §3 and D21–D46,
@@ -358,6 +475,35 @@ failing (tune round 2 of 2; uncommitted for the re-run):
 | DÜŞÜK 6 | `levels.mjs` gave Vite no root and failed outside the repository | D58: `scripts/lib/levels.mjs` roots Vite at the repository | `tests/scripts.test.ts` (`--smoke` from a directory outside the repository) |
 | DÜŞÜK 7 | The boot bar's fill started at the house's left edge (equal widths hid it) | the pure `bootLayout` in `src/game/layout.ts`; BootScene draws from it | `tests/layout.test.ts` (other house widths; red before the fix) |
 
+### Gate A, the auditor's re-run (2026-10-21)
+Gate A passed: the auditor's own code agrees with the files on all 1,792 houses (A1–A9). Three
+DÜŞÜK items followed, fixed at the start of Epic 3: GENERATOR.md and GDD.md brought in line with
+D55 and D56 (no threshold changed); the exact walk's loud failure at `PLAYER_STATE_LIMIT`
+documented in GENERATOR.md §5; `size.mjs` reports the first download and the lazy chunks apart
+(`tests/scripts.test.ts`, red on the old script, which counted a planted lazy chunk as initial).
+
+### Epic 3, independent audit (2026-10-21)
+Verdict: not ready for `feat(epic-3)`: 0 KRİTİK, 3 YÜKSEK, 3 ORTA, 5 DÜŞÜK; the auditor
+reproduced every runtime claim on `dist/test`. Fixes (uncommitted), each with its test written
+first and seen failing (11 e2e and 4 unit tests failed on the unfixed code, for the reasons below):
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| YÜKSEK 1 | `visible()` stated the rules in words ("resident seen by", "lit by the lamp"), and the playtester reads it | D63: poses, a warm wash, dark blocks, sun icons, dotted lines, grey dots, glowing rooms; no rule word | `tests/view.test.ts` (500 random boards; exact texts); graybox.spec › the conflict and playtest tests |
+| YÜKSEK 2 | A flush wrote only a pending save: a pause, a hidden page or a reload after 3 s of thinking restored 0.4 s | D64: every flush writes while the house is in play and started | graybox.spec › "the solve time … survives a pause / a hidden page / a reload" (the stored and the restored time ≥ the time shown) |
+| YÜKSEK 3 | A press held from the beat, or a tap on the hint during the slide, used the hint on the next house | D64: `hud.cancelPress()` in `win()` and `skip()` | graybox.spec › "a press held on the hint from the win beat …", "a tap in the beat skips it; a tap on the hint in the slide only ends the slide" |
+| ORTA 4 | A touch the system cancels acted as a release (placed a ghost, undid, used the hint) | D64: `wasCanceled` cancels the gesture and the press | graybox.spec › "on a touch screen › a touch the system cancels …" (CDP touchStart → touchCancel on a cell, in a drag, on undo, on the hint) |
+| ORTA 5 | Every RESIZE rebuilt the board, the same size too (3 builds for one event), and a resize in the beat cut it | D65: the layout copies the size; no rebuild at the same size; the beat's timer is the scene's | `tests/layout.test.ts` (the copy); graybox.spec › "a resize at the same size keeps the board; a new size builds it once", "a new screen size during the win beat …" |
+| ORTA 6 | `tally.shivers` counted ghosts (2 for one conflicting tap) | D66: one per move | `tests/house-log.test.ts`; graybox.spec › the conflict test |
+| DÜŞÜK 7 | Four e2e never replayed their moves; nothing tested the beat, the slide, the flushes or the dim | `previous()`; every graybox e2e that moves ends on the replay check; `dimmed` | graybox.spec (houses 1–3, the aspects, D49, the beat tests; the pause test checks `dimmed`) |
+| DÜŞÜK 8 | The move log, the tally and `drawn()` shipped in production | D66: `src/dev/house-log.ts` and `drawn()` in DEV only | smoke.spec › the production scan (`relocations`, `shivers`, `residents`) |
+| DÜŞÜK 9 | A new Graphics per flash and glance | `src/game/pool.ts` for the effect drawings | `tests/pool.test.ts`; graybox.spec › rapid taps (`effects`: made < used) |
+| DÜŞÜK 10 | `GLANCE_MS` 400 against GDD §3a's 250 | 250 | `tests/motion.test.ts` (every motion constant against its §3a row) |
+| DÜŞÜK 11 | Thin colour margins | measured and printed only; thresholds come with the tune plan | `tests/contrast.test.ts` ("Measured (Epic 3)") |
+
+Not changed: Phaser 3.90 calls preventDefault on every `touchcancel`, which Chrome reports as a
+console error on a real cancelled touch; only the touch e2e allows it (D64).
+
 ## Hasan's steps (outside the code)
 - [x] Create the GitHub repository `kriptoloca/shy-ghosts` and give the Claude GitHub App access
       (done 2026-10-21; `main` pushed through `fa66f51`; CI and the Pages workflow ran green on
@@ -366,23 +512,15 @@ failing (tune round 2 of 2; uncommitted for the re-run):
       Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
 
 ## Next steps (in order)
-1. The auditor re-runs A9 over all houses on the uncommitted tree (exact rates now: D55), with
-   the review of the fixes. Gate A passes when A1–A9 hold and no KRİTİK or YÜKSEK is open: then
-   `feat(epic-2)` and the verdict on the board. This was tune round 2 of 2: if Gate A still
-   fails, the work stops and Hasan gets the gate report with a recommendation (CLAUDE.md).
-2. Epic 3 (graybox loop) → **Gate B**. From Epic 2: read the houses through `src/data/houses.ts`
-   (`playHouse(k)`, which turns 506–1000 after house 1000 keeping the cycle phase, D56;
-   `dailyHouse(date)`, lazy, D57); never import the `*-meta.json` files. `levels.json` adds
-   197 KB to the first download (about 1.66 MB of the 5 MB budget). Carried over from the Epic 1
-   audit:
-   - after every restore, check `PlayState.solvedAtStart` and play the win (or move on) yourself:
-     no `solved` event will come (D49);
-   - change the save only through `recordHouseInProgress` and `advanceHouse` (D50);
-   - draw the seen lines from `status.by` and flash the lamps in `status.lamps` (D48);
-   - the screen e2e compares the scene with the strict model screen of
-     `tests/support/screen.ts` (D52).
-3. Both gates passed: graybox screenshots to Hasan, then the `/test/` link; Epic 4 starts. A gate
-   still failing after two tune rounds: stop, and Hasan gets the gate report with a
-   recommendation (CLAUDE.md, the fun gate).
-4. Open, not blocking before Epic 4: Hasan's answer on pace or depth (docs/questions.md, Open
-   questions).
+1. The main session reviews the audit fixes; then `feat(epic-3)`.
+2. **Gate B tune round 1 of 2**: the project manager's plan (interest, Flow, readability;
+   the colour margins above), applied in the constants and windows only, no threshold moved.
+3. **Gate B again**: the playtester runs TASKS.md's protocol on the dev server (URLs above):
+   houses 1–20 in order, then 27, 31 and 34, and houses 9, 17, 20 and 34 again at 600 × 600 and
+   844 × 390; the failing items replayed. A second failing round → the stop rule (CLAUDE.md).
+4. Gate B passed: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at 9:16, one
+   line each), then the `/test/` link; Epic 4 (feel, face and sound) starts. Its feel constants
+   move from `src/config.ts` ("Graybox motion") to `src/game/feel.ts`, and it decides whether the
+   two graybox aids of D59 (the lasting sight line, the glance dots) stay.
+5. Open, not blocking before Epic 4: Hasan's answer on pace or depth (docs/questions.md, Open
+   questions); arrow keys and Enter on desktop (GDD §3.1, optional, D60).

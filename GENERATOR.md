@@ -183,10 +183,17 @@ deduce.
 | `shallow` | as `naive`, plus T2 (one-step lookahead) before any guess | a player who sees direct consequences but does not count |
 | expert | the grader (§4) | always wins, by construction |
 
-Win rates use 400 seeded playouts per player and house (standard error ≤ 0.025); seeds
-`hashSeed('shy-ghosts/players/level/<id>/<player>')` and
-`hashSeed('shy-ghosts/players/daily/<date>/<player>')`. The selection uses the same measurement it
-stores, so no stored house lands outside its window.
+Win rates are **exact** (D55, which replaced 400 seeded playouts after Gate A's first A9 run):
+`exactWinRate` walks the policy over every guess it can make, each weighted by its probability (a
+uniform room among the tied ones, then a uniform free cell of it), with the same forced steps as a
+playout in between, and weighs a board met twice once (memoized by its free cells). The result is
+deterministic to the bit; the selection uses the same exact value it stores, so no stored house
+lands outside its window. Seeded playouts (`winRate`) remain only as a cross-check in the tests.
+The walk **fails the build loudly** past `PLAYER_STATE_LIMIT` (1,000,000 memoized boards,
+`src/gen/params.ts`) rather than stopping early and storing a partial value: a capped walk would
+store a number that is not the exact rate, and the selection would then rest on it. No house comes
+near the limit (the slowest of the 1,792 takes 9 ms); a candidate that ever reached it would point
+at a house the players cannot read, and the build should stop and say so.
 
 ## 6. Generator (`src/gen/generate.ts`; brief §5.3)
 
@@ -246,9 +253,12 @@ Brief §5.4 for houses 1–24; the cycles, the daily and the extra selection rul
 - **T4** (D8): allowed only in manors, at most one step, not required.
 - **Daily** (D10): N = 7 or 8 by the seed; the window 20–34 sits on the middle (27) of the regular
   cycle houses' full range (12 at cycle 0's positions 1–3 to 42 at the capped positions 4–9).
-- **After house 1000** (D14): house k > 1000 is house `501 + ((k − 1001) mod 500)` turned by
-  `(1 + floor((k − 1001) / 500)) mod 4` quarter turns ((r, c) → (c, n − 1 − r) per turn; room ids
-  re-canonicalized). The rules are symmetric, so the solution and the grade carry over (tested).
+- **After house 1000** (D14 as amended by D56): house k > 1000 is house
+  `506 + ((k − 1001) mod 495)` turned by `(1 + floor((k − 1001) / 495)) mod 4` quarter turns
+  ((r, c) → (c, n − 1 − r) per turn; room ids re-canonicalized). 495 is 45 whole cycles ending at
+  house 1000, so the cycle phase runs on across every seam (house 1001 is position 9, like 506).
+  The rules are symmetric, so the solution carries over; the houses the list turns (506–1000) are
+  built to grade the same in all four quarter turns (D54), so the grade carries over too (tested).
 
 ## 8. Export and the build (`scripts/levels.mjs`)
 
@@ -280,7 +290,7 @@ files it imports) over the built files; A9 is the auditor's. "Mid and late house
 | A5 | Tutorial teaches each rule in order | houses 1–3 equal the GDD §3.3 data, T1 only, one solution with the given (2, 4 and 9 without). House 1: (0,1) lies in room B and in the given's row. House 2: its path removes a candidate by the given's row and one by its column before the T1 steps that need them. House 3: three T1 steps, the first enabled by the given and each later one by the ghost placed just before. House 4: no given, furniture or lamp; its first step is T2. No furniture before house 9; house 9's solution has two ghosts in one row or column with furniture between them. No lamp before house 17; house 17's light is necessary (the lamp as furniture gives ≥ 2 solutions). First T3 at house 12; T4 first possible at house 34 |
 | A6 | Estimated solve time per band (estSeconds, §4.4) | band medians: 4–11 ≤ 90 s; 12–14 ≤ 130 s; 15–16 ≤ 85 s; 17–19 ≤ 105 s; 20–22 ≤ 160 s; 23–24 ≤ 100 s; cycle positions 1–3 ≤ 150 s; 4–9 ≤ 200 s; manors ≤ 300 s; cycle breathers ≤ 100 s; dailies 120–200 s. Every house among 1–16 ≤ 130 s (Hold: a house won about every 2 minutes in the first session). The brief's human targets are reported next to these, not gated |
 | A7 | A naive player fails most mid and late houses | naive ≤ 0.35 on every hard house, cycle positions 1–9 and daily; ≤ 0.25 on every manor. Over all mid and late houses: mean naive ≤ 0.25, and naive < 0.5 on ≥ 90 % of them. Shallow ≤ 0.60 on every house whose grade uses T3, mean ≤ 0.40 over them. Blind ≤ 0.01 on every generated house. Teach, rest and breather houses: reported, not capped |
-| A8 | Reproducible, in budget | `npm run levels` ≤ 10 minutes on the CI runner; `levels:check` byte-identical; same seed → same house; 792 dailies on UTC dates 2026-11-01 … 2028-12-31; rotation after 1000 keeps one solution and the grade (houses 501–510 at 90°) |
+| A8 | Reproducible, in budget | `npm run levels` ≤ 10 minutes on the CI runner; `levels:check` byte-identical; same seed → same house; 792 dailies on UTC dates 2026-11-01 … 2028-12-31; rotation after 1000 keeps one solution and the grade (the first ten turned houses, 1001–1010: houses 506–515 at 90° since D56) |
 | A9 | Independent re-measurement | the auditor's own segment code, solver and naive player, written from scratch outside the repository, agree with the files on 200 sampled houses (40 from each of: 4–24, positions 1–3, positions 4–9 with manors, breathers, dailies): uniqueness 200 of 200, naive win rates within ±0.07 |
 
 **Gate A passes** when A1–A9 hold, the epic's `code-review` and audit have no open KRİTİK or
@@ -343,8 +353,10 @@ Every rule of §7 applied (30 houses per row; cycle 0 / cycle 10):
   cell choices.
 - Grader (`tests/grade.test.ts`): the three fixtures of §4.5 (path, d, solution; stuck with a
   lower cap); house 3 by T1 only; the step accounting; estSeconds.
-- Players (`tests/players.test.ts`): determinism; the blind formula; naive wins 400 of 400 on the
-  tutorial houses and fewer on the T2 fixture.
+- Players (`tests/players.test.ts`): determinism; the blind formula; the exact rates (D55) against
+  hand-computed fixtures, an independent exact-fraction enumeration of the policy on 300 small
+  houses and 50,000 seeded playouts on four houses; naive always wins the tutorial houses and
+  wins 1/2 of the T2 fixture.
 - Generator (`tests/gen.test.ts`): determinism; 200 seeds per band: connected rooms of ≥ 2 cells
   and ≤ 2.5 × the average, R within the segment cap, one solution, canonical ids, counts in band.
 - Level files (`tests/levels.test.ts`, `tests/gate-a.test.ts`): §9, A1–A8.

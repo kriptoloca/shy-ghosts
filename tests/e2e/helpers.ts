@@ -40,17 +40,27 @@ export function collect(page: Page): Collected {
 }
 
 /**
- * Every test gets the collector and ends with the same-origin (CLAUDE.md rule 1) and no-error
- * checks, so a stray request or console error fails whichever test caused it.
+ * Chrome's report when a page cancels a `touchcancel`, which is never cancelable: Phaser 3.90's
+ * TouchManager calls preventDefault on every touchcancel the canvas gets
+ * (node_modules/phaser/src/input/touch/TouchManager.js, onTouchCancel). Only the tests that make
+ * the system cancel a touch allow it (`test.use({ quietConsole: [TOUCHCANCEL_REPORT] })`).
  */
-export const test = base.extend<{ guard: Collected }>({
+export const TOUCHCANCEL_REPORT = /^error: Ignored attempt to cancel a touchcancel event/;
+
+/**
+ * Every test gets the collector and ends with the same-origin (CLAUDE.md rule 1) and no-error
+ * checks, so a stray request or console error fails whichever test caused it; `quietConsole`
+ * names the few browser reports a test expects.
+ */
+export const test = base.extend<{ guard: Collected; quietConsole: RegExp[] }>({
+  quietConsole: [[], { option: true }],
   guard: [
-    async ({ page, baseURL }, use) => {
+    async ({ page, baseURL, quietConsole }, use) => {
       const c = collect(page);
       await use(c);
       const origin = new URL(baseURL ?? 'http://127.0.0.1:4173/').origin;
       expect([...c.origins].filter((o) => o !== origin)).toEqual([]);
-      expect(c.errors).toEqual([]);
+      expect(c.errors.filter((e) => !quietConsole.some((q) => q.test(e)))).toEqual([]);
     },
     { auto: true },
   ],
@@ -88,7 +98,10 @@ export async function platformPause(page: Page, paused: boolean): Promise<void> 
 /**
  * Strings only dev code holds (CLAUDE.md: dev hooks and dev URL parameters live only inside
  * `import.meta.env.DEV`). None may appear in a file the production build ships; the only dynamic
- * import is the dev hooks' (a production one would need a review of this list).
+ * import is the dev hooks' (a production one would need a review of this list). `relocations`
+ * and `shivers` are keys of the per-house tally (src/dev/house-log.ts) and `residents` one of
+ * `drawn()`'s read-back (src/game/board.ts): production keeps no move log and no tally and never
+ * reads the screen back (audit 2026-10-21, DÜŞÜK 8).
  */
 export const DEV_ONLY = [
   '__ghostDebug',
@@ -101,6 +114,9 @@ export const DEV_ONLY = [
   'URLSearchParams',
   'location.search',
   'import(',
+  'relocations',
+  'shivers',
+  'residents',
 ];
 
 /** Text files the build ships; the third-party Bridge runtime is audited separately. */

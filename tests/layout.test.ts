@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { DESIGN_LONG_MAX, DESIGN_SHORT } from '../src/config';
-import { BOOT_SIZES, bootLayout, designSize } from '../src/game/layout';
+import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT } from '../src/config';
+import {
+  BOOT_SIZES,
+  bootLayout,
+  cellAt,
+  cellCenter,
+  computeLayout,
+  designSize,
+  type Circle,
+  type Rect,
+  type Size,
+} from '../src/game/layout';
 
 /** The design size (CLAUDE.md rule 5): short side 1080, long side follows the aspect. */
 describe('designSize', () => {
@@ -63,6 +73,126 @@ describe('bootLayout', () => {
       const full = bootLayout(size, BOOT_SIZES.steps);
       expect(full.fill.width).toBe(full.track.width);
       expect(full.fill.x + full.fill.width).toBe(full.track.x + full.track.width);
+    }
+  });
+});
+
+/** Every design size the scale rule can give (CLAUDE.md rule 5): short side 1080, long side 1080–2400. */
+function designSizes(step = 40): Size[] {
+  const out: Size[] = [];
+  for (let long = DESIGN_SHORT; long <= DESIGN_LONG_MAX; long += step) {
+    out.push({ width: DESIGN_SHORT, height: long }, { width: long, height: DESIGN_SHORT });
+  }
+  out.push({ width: DESIGN_SHORT, height: DESIGN_LONG_MAX });
+  out.push({ width: DESIGN_LONG_MAX, height: DESIGN_SHORT });
+  return out;
+}
+
+function inside(r: Rect, size: Size): boolean {
+  return r.x >= 0 && r.y >= 0 && r.x + r.width <= size.width && r.y + r.height <= size.height;
+}
+
+function within(r: Rect, outer: Rect): boolean {
+  return (
+    r.x >= outer.x &&
+    r.y >= outer.y &&
+    r.x + r.width <= outer.x + outer.width &&
+    r.y + r.height <= outer.y + outer.height
+  );
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+function circleBox(c: Circle): Rect {
+  return { x: c.x - c.r, y: c.y - c.r, width: 2 * c.r, height: 2 * c.r };
+}
+
+/** The graybox screen (GDD §12): the board square, the bands, the HUD buttons. */
+describe('computeLayout', () => {
+  it('keeps its own copy of the size, so the scene can tell a new size from the old one', () => {
+    // Phaser hands the scene its live gameSize object, which a resize changes in place (audit
+    // 2026-10-21, ORTA 5): a layout that kept it would always match the size it is compared with
+    const live = { width: 1080, height: 1920 };
+    const l = computeLayout(live, 6);
+    expect(l.size).not.toBe(live);
+    live.width = 1920;
+    live.height = 1080;
+    expect(l.size).toEqual({ width: 1080, height: 1920 });
+  });
+
+  it('picks portrait, square or landscape by the aspect (9:16, 1:1, 16:9)', () => {
+    expect(computeLayout(designSize(390, 844), 9).arrangement).toBe('portrait');
+    expect(computeLayout(designSize(600, 600), 9).arrangement).toBe('square');
+    expect(computeLayout(designSize(844, 390), 9).arrangement).toBe('landscape');
+    expect(computeLayout(designSize(1280, 720), 9).arrangement).toBe('landscape');
+  });
+
+  it('over every design size (40 px steps): cells ≥ 80 px at 9 × 9, nothing overlaps, all on screen', () => {
+    const wrong: string[] = [];
+    for (const size of designSizes()) {
+      const l = computeLayout(size, 9);
+      const tag = `${String(size.width)}×${String(size.height)}`;
+      if (l.cell < CELL_MIN) wrong.push(`${tag}: cell ${String(l.cell)}`);
+      if (l.board.width !== l.board.height) wrong.push(`${tag}: board not square`);
+      const pad = l.wall / 2; // walls are centred on the board's edge
+      const outer = {
+        x: l.board.x - pad,
+        y: l.board.y - pad,
+        width: l.board.width + 2 * pad,
+        height: l.board.height + 2 * pad,
+      };
+      const parts: [string, Rect][] = [
+        ['board', outer],
+        ['hud', l.hud],
+        ['undo', circleBox(l.buttons.undo)],
+        ['hint', circleBox(l.buttons.hint)],
+      ];
+      if (l.top) parts.push(['top', l.top]);
+      for (const [name, r] of parts) if (!inside(r, size)) wrong.push(`${tag}: ${name} off screen`);
+      if (overlaps(outer, l.hud)) wrong.push(`${tag}: board over the HUD`);
+      if (l.top && overlaps(outer, l.top)) wrong.push(`${tag}: board over the top band`);
+      if (overlaps(circleBox(l.buttons.undo), circleBox(l.buttons.hint))) {
+        wrong.push(`${tag}: buttons overlap`);
+      }
+      for (const b of [l.buttons.undo, l.buttons.hint]) {
+        if (!within(circleBox(b), l.hud)) wrong.push(`${tag}: a button outside the HUD`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('every side 2–9 fills the same board; walls are thicker than the grid lines', () => {
+    for (const size of [designSize(390, 844), designSize(600, 600), designSize(844, 390)]) {
+      const nine = computeLayout(size, 9);
+      for (let n = 2; n <= 9; n++) {
+        const l = computeLayout(size, n);
+        expect(l.board).toEqual(nine.board);
+        expect(l.cell * n).toBeCloseTo(l.board.width, 9);
+        expect(l.wall).toBeGreaterThan(l.grid);
+      }
+    }
+  });
+
+  it('cellAt is the cell under a point, and cellCenter its middle; outside the board −1', () => {
+    for (const size of [designSize(390, 844), designSize(600, 600), designSize(844, 390)]) {
+      for (const n of [2, 5, 9]) {
+        const l = computeLayout(size, n);
+        for (let i = 0; i < n * n; i++) {
+          const c = cellCenter(l, i);
+          expect(cellAt(l, c.x, c.y)).toBe(i);
+          // a point just inside each corner of the cell is still the cell
+          const r = Math.floor(i / n);
+          const k = i % n;
+          const x0 = l.board.x + k * l.cell;
+          const y0 = l.board.y + r * l.cell;
+          expect(cellAt(l, x0 + 1, y0 + 1)).toBe(i);
+          expect(cellAt(l, x0 + l.cell - 1, y0 + l.cell - 1)).toBe(i);
+        }
+        expect(cellAt(l, l.board.x - 1, l.board.y)).toBe(-1);
+        expect(cellAt(l, l.board.x, l.board.y + l.board.height + 1)).toBe(-1);
+      }
     }
   });
 });

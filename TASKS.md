@@ -107,9 +107,8 @@ to what the graybox needs (D2).
   calibration (GENERATOR.md §10); the gate verdict recorded on the epic board. A failing threshold
   gets at most two tune rounds (windows in `params.ts`, generator mechanics), then the stop rule
   (CLAUDE.md).
-- Status 2026-10-21: built and audited; A9 failed on the sampled win rates, and the audit's
-  findings are fixed in tune round 2 of 2 (D55–D58), uncommitted for A9's re-run
-  (docs/PROGRESS.md). A1–A8 green; decisions D53–D58.
+- Status 2026-10-21: done (`4cd221d`, pushed); **Gate A passed** (the auditor's independent code
+  agrees on all 1,792 houses); tune round 2 of 2 used (D55–D58); decisions D53–D58.
   - [x] `params.ts`, `solve.ts`, `grade.ts`, `players.ts`, `generate.ts`, `build-levels.ts`,
         `dates.ts`, `record.ts`, `src/data/houses.ts`; `scripts/levels.mjs` and
         `scripts/lib/levels.mjs`; `levels` and `levels:check` in package.json and CI
@@ -118,12 +117,9 @@ to what the graybox needs (D2).
   - [x] the three grader fixtures; the solver against brute force; generator invariants over
         200 seeds per band; determinism; exact win rates against hand counts, an independent
         enumeration and 50,000 playouts
-  - [x] Gate A A1–A8 as tests over the built files (`tests/gate-a.test.ts`, 42)
-  - [x] audit fixes red first: exact rates (D55), the cycle phase past 1000 (D56), play files
-        and lazy dailies (D57), budget and root (D58), the boot bar
-  - [x] `npm run check`, `npm test` (233), `npm run build`, `npm run e2e` (4) green
-  - [ ] A9: the auditor's re-run over all houses
-  - [ ] `feat(epic-2)` once Gate A passes; otherwise the stop rule
+  - [x] Gate A A1–A8 as tests over the built files (`tests/gate-a.test.ts`, 42); A9 by the
+        auditor
+  - [x] `code-review` and the adversarial audit, findings fixed red first, then `feat(epic-2)`
 
 ## Epic 3 — Layout and graybox loop (M1) → Gate B
 - `game/layout.ts` (`computeLayout`, pure: HUD bands, the board square, the cell size; portrait,
@@ -139,7 +135,7 @@ to what the graybox needs (D2).
   reload; ResumeGrace; the platform pause freezes and dims.
 - Debug hooks: `state()`, `cellCenter(i)`, `solution()` (null under `?playtest=1`), `visible()`
   (the board as a player sees it, as text: rooms, walls, objects, lit cells, ghosts and their
-  state, marks), `?house=N`.
+  state, marks; in words of what is drawn, never of the rules, D63), `?house=N`.
 - AC (brief M1, e2e on the dev build): load → house 1 interactive within 3 s → houses 1–3 solved
   through real taps in under a minute → each next house starts by itself; a conflict shows the
   seen state at once; relocation, removal, marks (paint, erase) and undo; a reload resumes the
@@ -184,6 +180,26 @@ to what the graybox needs (D2).
     the repository and Pages exist; Epic 4 starts. Fail: a tune round (windows, layout, graybox
     readability) and the failing items replayed; still failing after two tune rounds → the stop
     rule (CLAUDE.md).
+
+- Status 2026-10-21: built and audited (0 KRİTİK, 3 YÜKSEK, 3 ORTA, 5 DÜŞÜK); every finding
+  fixed red-first and uncommitted for the main session (docs/PROGRESS.md); Gate B round 1 not
+  passed (interest, Flow, readability), its tune plan pending; decisions D59–D66.
+  - [x] `computeLayout` (portrait, square, landscape; cells ≥ 80 px at 9 × 9 over every design
+        size), `main.ts` scaling
+  - [x] graybox look: rooms by lightness and pattern with thick walls, furniture, lamps, the lit
+        wash, ghost states as textures of their own (calm; seen: hands and shiver; lit: squint;
+        resident: nightcap), settled rooms glow, marks as dots, the solved frame
+  - [x] taps and drags (24 px), relocation glide, removal, nudge, undo, the free hint (90 s
+        cooldown), the win beat and the next house sliding in, saves (debounced, every house),
+        resume, ResumeGrace, the pause that freezes and dims
+  - [x] hooks `state()`, `cellCenter(i)`, `solution()` (null under `?playtest=1`), `visible()`,
+        plus `drawn()`, `rules()`, `events()`, `house()`, `buttonCenter()`; `?house=N`
+  - [x] e2e (14 graybox + 4 smoke); `npm run check`, `npm test` (267), `npm run levels:check`,
+        `npm run build`, `npm run e2e` green
+  - [x] `code-review` and the adversarial audit; the findings fixed red-first (D63–D66):
+        `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
+  - [ ] `feat(epic-3)` (the main session)
+  - [ ] Gate B (the playtester), B1–B7: round 1 not passed; tune round 1 of 2 next
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B
 - `game/feel.ts` (every GDD §3a value as a named constant), procedural textures (ghost states,

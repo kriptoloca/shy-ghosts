@@ -365,6 +365,94 @@ YÜKSEK 2, ORTA 3, DÜŞÜK 4–7). No Gate A threshold moved.
   bar's (equal only because both are 360 px wide). The boot screen's geometry is now the pure
   `bootLayout` (src/game/layout.ts), tested with other house widths.
 
+## 2026-10-21 (Epic 3: coder)
+
+The graybox loop for Gate B, after the A9 re-audit's three DÜŞÜK items: GENERATOR.md §5, §7, §9
+and GDD.md §7, §9 now follow D55 (exact rates) and D56 (house 506 + ((k − 1001) mod 495)), no
+threshold changed; GENERATOR.md §5 records why the exact walk fails the build at
+`PLAYER_STATE_LIMIT` instead of storing a partial value; `scripts/size.mjs` reports the first
+download and the lazy chunks apart (tested on a planted dist/).
+
+- **D59 Graybox readability** (TASKS.md Epic 3; Gate B judges a player who gets no rules). Rooms:
+  four lightness steps of one slate hue and six wallpaper patterns (plain, dots, vertical and
+  horizontal stripes, two diagonals); neighbouring rooms differ in both (two proper colourings
+  of the room graph, checked on all 1,795 houses), so the board reads as a floor plan, never as a
+  coloured grid; walls are dark and 7–14 px against a 2 px grid. Ghost states differ in shape,
+  lightness and colour at once: calm, a white sheet with two dark eyes (its room glows teal);
+  seen, a lavender sheet with both arms raised to white mittens over the eyes and shiver ticks
+  at its sides (plus the ±4 px shiver and a ±2 px one every 1.5 s); lit, a yellow sheet squinting
+  under a flat shading hand; a resident adds a nightcap with a white cuff and a pompom that
+  covers neither eyes nor hands. Marks are small grey dots with no face. A solved house gets a
+  warm frame and its rooms flash in room-id order. Two aids beyond GDD §3a, for Fair (a visible
+  cause for every shiver): a faint dotted line joins every two ghosts that see each other for as
+  long as they do (the GDD's double flash still plays on top), and a calm ghost's glance draws
+  dots along its row and column to the first blocker. Epic 4 replaces the art and may drop or
+  tune both aids.
+- **D60 Input and session details.** A gesture must start on the board (the HUD buttons have
+  their own press-and-release); a drag follows fast moves cell by cell; a platform pause cancels
+  the gesture and any button press in hand. The solve time starts at the first pointer-down on
+  the board (GDD §3.2 "the first input") and counts only unpaused play. A conflict, for the
+  save's `conflicts`, is a move after which a ghost is seen that was not seen before. The free
+  hint's 90 s cooldown counts unpaused play across houses for the session (a reload resets it).
+  A tap during the win beat skips to the slide, one during the slide ends it. The house in
+  progress is written 400 ms after the last change, and at once on a platform pause, a hidden
+  page, `pagehide` and the scene's end. Arrow keys and Enter (GDD §3.1, optional on desktop) are
+  not built.
+- **D61 Layout** (`computeLayout`, GDD §12): portrait when the design size is at least 1.2 times
+  taller than wide (bands 180 px above, 240 px below with the buttons), landscape when 1.2 times
+  wider (a 240 px column on the right), the square arrangement in between (132 px bands above and
+  below). The board is the same square for every side, so cells are 112.9 px at 9 × 9 on 9:16 and
+  16:9 and 83.6 px at 1:1, never under 80 px (tested over every design size in 40 px steps, both
+  orientations).
+- **D62 Dev hooks for the e2e and the playtester.** `drawn()` reads the display objects back
+  (a ghost's cell from its position, its state from its texture, marks from visible dots, glowing
+  rooms from the glow's alpha, the solved frame), `rules()` reads the play state, `events()` returns
+  every event list the scene played; the e2e replays them on the strict model screen (D52) and
+  requires drawn = model = rules once the motion has settled, after every step and after rapid
+  taps. `visible()` writes the scene's board picture as text (rooms with walls, light and objects,
+  ghosts with states and who sees them, marks, glowing rooms); `state()` adds a per-house tally of
+  taps, placements, removals, relocations, nudges, strokes, marks, undos, hints and shivers for
+  the playtester's logs. Under `?playtest=1` no hook returns the solution.
+
+## 2026-10-21 (Epic 3 audit fixes: coder)
+
+The independent audit of Epic 3 found 0 KRİTİK, 3 YÜKSEK, 3 ORTA and 5 DÜŞÜK; each fix below
+started with its test seen failing (docs/PROGRESS.md, "Epic 3, independent audit").
+
+- **D63 `visible()` describes only what is drawn** (audit YÜKSEK 1; supersedes D62's wording of
+  it). The playtester reads it during play and gets no rules, so it names what the screen shows
+  and never a rule: ghosts by pose ("eyes open", "hands over the eyes", "squinting under a hand",
+  "nightcap"), the floor as plain, a warm wash, dark blocks and sun icons, the dotted lines
+  between ghosts, grey dots, glowing rooms, a plain or a warm frame. No word such as seen, lit,
+  lamp, furniture, resident, calm, solved or rule appears (`tests/support/rule-words.ts`, checked
+  on 500 random boards and in the playtest e2e). The text is the same with and without
+  `?playtest=1`. Round 1's B1 statements were made with the old wording; whether they stand is the
+  main session's call.
+- **D64 Saves and presses around the edges of a house** (audit YÜKSEK 2–3, ORTA 4; amends D60). A
+  flush (platform pause, hidden page, `pagehide`, the scene's end) writes the house in progress
+  whenever it is in play and has started, with or without a change pending, so the time thought
+  since the last move survives. The win and every tap that skips the beat or ends the slide drop
+  a button press in hand, so no press reaches the next house. A touch the system cancels
+  (Phaser's `wasCanceled`) is no tap, no drag and no press. Phaser 3.90 calls preventDefault on
+  every `touchcancel`, which Chrome reports as a console error; only the touch e2e allows that one
+  report (`TOUCHCANCEL_REPORT` in tests/e2e/helpers.ts).
+- **D65 New screen sizes** (audit ORTA 5; amends D61). A layout keeps its own copy of the design
+  size (Phaser passes its live `gameSize`). A RESIZE at an unchanged size builds nothing (Phaser
+  sends one after every window resize besides ours); a new size builds the board once. The win
+  beat's timer belongs to the scene: a new size during the beat lays the solved house out again
+  and the beat plays its whole second; the next house opens at the new size.
+- **D66 Dev record, effects, motion, contrast** (audit ORTA 6, DÜŞÜK 7–11). The tally counts
+  shivering placements per move (one conflicting tap is 1, as B1 counts them). The move log and
+  the tally (`src/dev/house-log.ts`) and `drawn()`'s read-back exist in DEV builds only; the smoke
+  e2e scans the production bundle for their keys. `previous()` returns the house finished last
+  (data, record, final rules), so the e2e replays every finished house on the strict model screen
+  (D52); `state()` adds `builds`, `dimmed` and `effects`. Flashes and glances draw into pooled
+  Graphics (`src/game/pool.ts`). `GLANCE_MS` is GDD §3a's 250 ms (`tests/motion.test.ts` reads every
+  graybox motion constant against its §3a row). `tests/contrast.test.ts` prints the colour margins
+  (WCAG contrast, CIE76 ΔE, deuteranope ΔE) with no thresholds: those come with the Gate B tune
+  plan. It also found one margin the audit did not list: a mark on a lit cell of a glowing room,
+  1.41:1.
+
 ## Open questions (defaults in force)
 
 - **For Hasan (product direction): pace or depth, if the first real times disagree with the brief?**

@@ -211,8 +211,8 @@ session (Munch Pixels D11).
   furniture (9), night and a music layer (10), chapter 2 Library with the sunglasses ghost (16),
   lamps (17), chapter 3 Cellar (31), chapter 4 Greenhouse (46), then a chapter every 15 houses.
 - **Rescue:** unlimited free undo; the hint; no fail, so a hard house never ends a session.
-- **Never run out:** 1000 houses, then the list continues from house 501 rotated (D14), plus a
-  daily house for every date to the end of 2028.
+- **Never run out:** 1000 houses, then the list continues from house 506 rotated, keeping the
+  cycle phase (D14 as amended by D56), plus a daily house for every date to the end of 2028.
 - **Session estimate** (brief §6a, `pebblit-retention`): 11:14 with 20 s interstitials and the
   first not before 5:00. Hold score 5. An estimate; players decide the real number.
 
@@ -237,8 +237,9 @@ dev fakes (`?fakeads=1`, `?fakeads=fail`, `?adfast=1`).
 ## 9. Progression, meta and saves
 
 - **Houses:** a fixed list, the same for every player: houses 1–3 hand-made, 4–1000 generated at
-  build time (`src/data/levels.json`); after house 1000 the list continues from house 501 rotated
-  (D14). The game always plays the lowest unsolved house; there is no level select.
+  build time (`src/data/levels.json`); after house 1000 the list continues from house 506 rotated
+  (D14 as amended by D56). The game always plays the lowest unsolved house; there is no level
+  select.
 - **Chapters** every 15 houses: Attic (1–15; night falls at house 10 with a music layer), Library
   (16–30), Cellar (31–45), Greenhouse (46–60), Ballroom, Kitchen, Observatory, Boathouse, then
   palette remixes. Each chapter has its own facade, sky, wallpapers and music loop.

@@ -56,3 +56,14 @@ describe('every scene follows the design size (CLAUDE.md rule 5)', () => {
     },
   );
 });
+
+describe('the Game scene changes the save only through the progress guards (D50)', () => {
+  it('no direct write of progress.house or progress.current, no persistProgress call', () => {
+    // (Boot's dev-only ?house=N sets the house before any house is open, D38)
+    const game = code('src/game/scenes/GameScene.ts');
+    expect(game).not.toMatch(/progress\.(?:house|current|housesSolved)\s*=(?!=)/);
+    expect(game).not.toMatch(/\bpersistProgress\(/);
+    expect(game).toMatch(/\brecordHouseInProgress\(/);
+    expect(game).toMatch(/\badvanceHouse\(/);
+  });
+});

@@ -21,19 +21,28 @@ afterAll(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-/** Writes dist/ with these files (path → text), runs the script, returns its exit status. */
-function run(script: string, files: Record<string, string>): number {
+/** Writes dist/ with these files (path → text), runs the script: its exit status and output. */
+function runOut(script: string, files: Record<string, string>): { status: number; out: string } {
   rmSync(join(root, 'dist'), { recursive: true, force: true });
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(join(root, 'dist', path, '..'), { recursive: true });
     writeFileSync(join(root, 'dist', path), text);
   }
   try {
-    execFileSync(process.execPath, [join(root, 'scripts', script)], { stdio: 'pipe' });
-    return 0;
+    const out = execFileSync(process.execPath, [join(root, 'scripts', script)], {
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+    return { status: 0, out };
   } catch (e: unknown) {
-    return (e as { status?: number }).status ?? 1;
+    const x = e as { status?: number; stdout?: string; stderr?: string };
+    return { status: x.status ?? 1, out: `${x.stdout ?? ''}${x.stderr ?? ''}` };
   }
+}
+
+/** Writes dist/ with these files (path → text), runs the script, returns its exit status. */
+function run(script: string, files: Record<string, string>): number {
+  return runOut(script, files).status;
 }
 
 const clean = {
@@ -64,6 +73,32 @@ describe('audit-dist and size', () => {
 
   it('the audit fails on a compressed file', () => {
     expect(run('audit-dist.mjs', { ...clean, 'assets/index.js.gz': 'x' })).not.toBe(0);
+  });
+
+  it('size reports the first download and the lazy chunks apart (audit 2026-10-21, DÜŞÜK 2)', () => {
+    // 100 KiB per file; the entry imports a vendor chunk statically and the dailies lazily, and
+    // the dailies chunk imports one of its own: two files load on first use, five at the start
+    const pad = (head: string): string => head + ' '.repeat(100 * 1024 - head.length);
+    const r = runOut('size.mjs', {
+      'index.html': pad(
+        '<script src="./playgama-bridge.js"></script>' +
+          '<script type="module" crossorigin src="./assets/index-a1.js"></script>',
+      ),
+      'assets/index-a1.js': pad(
+        'import{v as a}from"./vendor-b2.js";const d=()=>__vitePreload(()=>import("./dailies-c3.js"),[]);',
+      ),
+      'assets/vendor-b2.js': pad('export const v=1;'),
+      'assets/dailies-c3.js': pad('import"./daily-part-d4.js";export default{};'),
+      'assets/daily-part-d4.js': pad('export const p=2;'),
+      'playgama-bridge.js': pad('window.bridge={};'),
+      'playgama-bridge-config.json': pad('{}'),
+    });
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/initial download: 0\.49 MB in 5 files/);
+    expect(r.out).toMatch(/lazy, on first use: 0\.20 MB in 2 files/);
+    expect(r.out).toMatch(/assets\/dailies-c3\.js \(lazy\)/);
+    expect(r.out).toMatch(/assets\/daily-part-d4\.js \(lazy\)/);
+    expect(r.out).not.toMatch(/assets\/vendor-b2\.js \(lazy\)/);
   });
 });
 
