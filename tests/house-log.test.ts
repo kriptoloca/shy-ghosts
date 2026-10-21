@@ -53,4 +53,21 @@ describe('HouseLog', () => {
     expect(log.tally).toMatchObject({ strokes: 2, marked: 2, erased: 1, undos: 1 });
     expect(log.moves).toHaveLength(3);
   });
+
+  it('counts a hint at its first press (D74), and a drag with the ghost it carried (D72)', () => {
+    const { s, log } = house1();
+    log.hinted(); // the reason shown
+    log.add('hint', s.hint()); // the second press places the ghost: still one hint
+    expect(log.tally.hints).toBe(1);
+    // house 2 (ABB / ABB / CCC, the resident at (0,1)): a ghost in room A carried down its
+    // column, then into room C, which holds none, then toward the resident's room
+    const two = new PlayState(parseHouse(TUTORIAL_HOUSES[1] as (typeof TUTORIAL_HOUSES)[number]));
+    const log2 = new HouseLog(BoardView.of(two).snapshot());
+    log2.add('tap', two.tap(0));
+    log2.add('drag', two.drag(0, 3)); // within A: a relocation
+    log2.add('drag', two.drag(3, 6)); // into C: moved
+    log2.add('drag', two.drag(6, 4)); // into B, the resident's room: back, with a nudge
+    expect(log2.tally).toMatchObject({ drags: 3, relocations: 1, carried: 1, nudges: 1 });
+    expect(log2.moves).toHaveLength(4);
+  });
 });

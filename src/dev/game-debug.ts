@@ -5,8 +5,9 @@ import type { HouseOnScreen, Phase } from '../game/scenes/GameScene';
 import { BoardView } from '../game/view';
 import { visibleText } from '../game/visible';
 import { getPlatform, sentPlatformMessages, simulatePause } from '../platform/bridge';
+import type { HintExplain } from '../core/hint';
 import type { PlayEvent } from '../core/state';
-import { installDebug, type DebugHouse, type DebugRecord } from './debug';
+import { installDebug, type DebugHintReason, type DebugHouse, type DebugRecord } from './debug';
 
 /** What the Game scene shows the dev hooks (built inside its DEV branch only). */
 export interface GameProbe {
@@ -27,6 +28,17 @@ export interface GameProbe {
   dimmed: () => boolean;
   effects: () => { made: number; used: number };
   previous: () => HouseOnScreen | null;
+  /** ms on the scene's clock since the house was solved, during its finale (D73). */
+  beatMs: () => number | null;
+  /** The last finale: its beat on the scene's clock, and the whole of it on the wall clock. */
+  finale: () => { beatMs: number; wallMs: number } | null;
+  /** Demonstrations started since the Game began, and the house on screen's (D70). */
+  demos: () => number;
+  shownAt: () => number | null;
+  playAt: () => number | null;
+  demoSkipped: () => boolean;
+  /** The hint's reason waiting for its second press (D74). */
+  hintReason: () => HintExplain | null;
 }
 
 /** Design px → page px through the canvas's place and scale on the page. */
@@ -58,6 +70,12 @@ export function installGameDebug(p: GameProbe): void {
     };
   };
   const house = (): DebugHouse => asDebug(p.house());
+  /** A placement's cell is on the solution: `?playtest=1` leaves it out (D33). */
+  const reason = (r: HintExplain | null): DebugHintReason | null => {
+    if (!r) return null;
+    if (r.kind === 'remove' || !playtest) return structuredClone(r);
+    return { kind: r.kind, room: r.room, segments: [...r.segments], rooms: [...r.rooms] };
+  };
   const record = (h: HouseOnScreen): DebugRecord => {
     if (!h.log) throw new Error('the house log is kept in DEV builds only');
     return {
@@ -97,6 +115,13 @@ export function installGameDebug(p: GameProbe): void {
         builds: p.builds(),
         dimmed: p.dimmed(),
         effects: p.effects(),
+        beatMs: p.beatMs(),
+        finale: p.finale(),
+        demos: p.demos(),
+        shownAt: p.shownAt(),
+        playAt: p.playAt(),
+        demoSkipped: p.demoSkipped(),
+        hintReason: reason(p.hintReason()),
       };
     },
     pause: simulatePause,

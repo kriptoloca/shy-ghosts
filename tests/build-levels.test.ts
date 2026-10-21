@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseData } from '../src/core/house';
 import { buildLevels, gradeTurns, report, windowYield } from '../src/gen/build-levels';
-import { grade, type Grade } from '../src/gen/grade';
+import { grade, insightEpisodes, type Grade } from '../src/gen/grade';
 import {
   CYCLE_PERIOD,
   CYCLE_START,
@@ -17,8 +17,10 @@ import { baseOf } from '../src/gen/record';
 
 /**
  * The turn rule (D54): houses 501–1000 come back turned after house 1000 (D14), so each must
- * grade the same in all four quarter turns. Two 6 × 6 breathers for place 629: the first build's,
- * whose grade changes with a turn, and the one the build chose with the rule.
+ * grade the same in all four quarter turns, and since Gate B's tune round 1 still ask for its
+ * band's insights in every turn (D67). Three 6 × 6 breathers: the first build's house 629, whose
+ * grade changes with a turn; house 508 of the round-1 build before this rule, whose grade stays
+ * but a turn names its second stall a shape; and the house the build chose for place 629.
  */
 const GRADE_TURNS: HouseData = {
   n: 6,
@@ -27,12 +29,19 @@ const GRADE_TURNS: HouseData = {
   givens: [],
   solution: [13, 8, 5, 22, 18, 35],
 };
+const INSIGHT_TURNS: HouseData = {
+  n: 6,
+  rooms: '012233011234002234002554066655667777',
+  objects: '..............F..F..........F.......',
+  givens: [],
+  solution: [12, 1, 20, 16, 11, 29, 27, 34],
+};
 const GRADE_STAYS: HouseData = {
   n: 6,
-  rooms: '011111000121022223044443044533005555',
-  objects: '...........F.............L......F..F',
+  rooms: '001111022111222333442335677355677755',
+  objects: '...F...............F....F...........',
   givens: [],
-  solution: [30, 5, 10, 17, 20, 33],
+  solution: [1, 4, 8, 15, 18, 23, 30, 25],
 };
 
 function graded(h: HouseData, place: number): Grade {
@@ -79,6 +88,10 @@ describe('the turn rule (D54)', () => {
     expect(DAILY_BAND.turnable).toBe(false);
   });
 
+  it('refuses a house that grades the same in every turn but asks for fewer insights in one', () => {
+    expect(gradeTurns(bandFor(508), INSIGHT_TURNS, graded(INSIGHT_TURNS, 508))).toBe(false);
+  });
+
   it('refuses a house whose grade changes with a quarter turn', () => {
     expect(gradeTurns(bandFor(629), GRADE_TURNS, graded(GRADE_TURNS, 629))).toBe(false);
   });
@@ -99,6 +112,20 @@ describe('the build report (GENERATOR.md §8)', () => {
     }
     // house 4 keeps the lowest d among TEACH_POOL qualifying candidates; the others the first
     expect(built.searches.map((s) => s.kept)).toEqual([TEACH_POOL, 1, 1]);
+  });
+
+  it("records every house's insights, per episode, as the grader names them (D67)", () => {
+    const all = [...built.levels, ...Object.values(built.dailies)];
+    for (const h of all) {
+      const band = h.role === 'tutorial' ? null : h.role === 'daily' ? DAILY_BAND : bandFor(h.id);
+      const g = grade(
+        parseHouse(h),
+        band ? { maxTech: band.maxTech, maxT4: band.maxT4 } : { maxTech: 1 },
+      );
+      expect(h.insights).toEqual(g.insights);
+      expect(h.insightEpisodes).toBe(insightEpisodes(g.insights));
+    }
+    expect(all.map((h) => h.insights.length)).toEqual(all.map((h) => h.grade.episodes));
   });
 
   it('prints one line per group, ending with the candidates per house and the d-window yield', () => {

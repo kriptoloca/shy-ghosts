@@ -81,3 +81,45 @@ describe('Gesture', () => {
     expect(g.up(...mid(6))).toBeNull();
   });
 });
+
+describe('Gesture: carrying a ghost (D72)', () => {
+  /** Ghosts stand on cells 5 and 10. */
+  const holds = (cell: number): boolean => cell === 5 || cell === 10;
+
+  it('a drag that starts on a ghost carries it to the cell where it comes up', () => {
+    const g = new Gesture(cellAt, DRAG_PX, holds);
+    expect(g.origin).toBe(-1);
+    g.down(...mid(5));
+    expect(g.origin).toBe(5);
+    expect(g.move(...mid(6))).toEqual([]); // no marks while carrying
+    expect(g.carrying).toBe(true);
+    expect(g.over).toBe(6);
+    g.move(...mid(7));
+    expect(g.over).toBe(7);
+    expect(g.up(...mid(7))).toEqual({ kind: 'carry', from: 5, to: 7 });
+    expect(g.carrying).toBe(false);
+    expect(g.origin).toBe(-1);
+  });
+
+  it('dropped off the board it carries to −1; a small wobble on a ghost is still a tap', () => {
+    const g = new Gesture(cellAt, DRAG_PX, holds);
+    g.down(...mid(10));
+    g.move(N * CELL + 40, mid(10)[1]);
+    expect(g.over).toBe(-1);
+    expect(g.up(N * CELL + 40, mid(10)[1])).toEqual({ kind: 'carry', from: 10, to: -1 });
+    const tap = new Gesture(cellAt, DRAG_PX, holds);
+    const [x, y] = mid(5);
+    tap.down(x, y);
+    tap.move(x + DRAG_PX - 1, y);
+    expect(tap.carrying).toBe(false);
+    expect(tap.up(x + DRAG_PX - 1, y)).toEqual({ kind: 'tap', cell: 5 });
+  });
+
+  it('a drag from a cell without a ghost still paints, over the ghosts it passes too', () => {
+    const g = new Gesture(cellAt, DRAG_PX, holds);
+    g.down(...mid(4));
+    g.move(...mid(6));
+    expect(g.carrying).toBe(false);
+    expect(g.up(...mid(6))).toEqual({ kind: 'stroke', start: 4, cells: [4, 5, 6] });
+  });
+});

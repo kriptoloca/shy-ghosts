@@ -19,6 +19,22 @@ import {
 } from './params';
 import type { Puzzle } from './solve';
 
+/**
+ * A deduction step named for people (GENERATOR.md §4.6; Gate B tune round 1, D67): what a player
+ * must see to make it. T2 steps are `shape` (a room whose own empty cells lie in one line claims
+ * it: seen at a glance), `lamp` (lamp light put the room's candidates in one line), `line` (ghosts
+ * placed earlier, or earlier removals, did) or `cross` (the room's candidates lie in x's row and
+ * column together, in neither alone); a T3 step is a `count` (k rooms filling k lines), a T4 step
+ * a `chain` ("if here, then that room is empty").
+ */
+export type Insight = 'shape' | 'lamp' | 'line' | 'cross' | 'count' | 'chain';
+
+/** The names from the simplest: when several rooms explain a T2 step, the simplest wins. */
+export const INSIGHTS: readonly Insight[] = ['shape', 'lamp', 'line', 'cross', 'count', 'chain'];
+
+/** The one name that is no insight: a room that lies in one line from the start. */
+export const TRIVIAL: Insight = 'shape';
+
 /** A house's grade (GENERATOR.md §1.1, §4.3). */
 export interface Grade {
   /** The sum of the step weights. */
@@ -40,6 +56,8 @@ export interface GradeResult {
   ok: boolean;
   /** The techniques of the steps taken, in order. */
   path: Tech[];
+  /** Per episode (a maximal run of non-T1 steps), the insight of each of its steps, in order. */
+  insights: Insight[][];
   /** The ghosts placed, givens included (the solution when ok). */
   placed: number[];
   grade: Grade | null;
@@ -63,7 +81,18 @@ export function episodesOf(path: readonly Tech[]): number {
   return runs;
 }
 
-/** One technique instance: what it did, for the trace. */
+/** Episodes that hold an insight (a step other than `shape`): the stalls only a deduction ends. */
+export function insightEpisodes(insights: readonly (readonly Insight[])[]): number {
+  return insights.filter((e) => e.some((i) => i !== TRIVIAL)).length;
+}
+
+/** The kinds of insight a house asks for: every name but `shape`, simplest first. */
+export function insightKinds(insights: readonly (readonly Insight[])[]): Insight[] {
+  const used = new Set(insights.flat());
+  return INSIGHTS.filter((i) => i !== TRIVIAL && used.has(i));
+}
+
+/** One technique instance: what it did and why, for the trace and the hint (D74). */
 export interface Step {
   tech: Tech;
   weight: number;
@@ -71,6 +100,12 @@ export interface Step {
   placed: number | null;
   /** T2, T3, T4: the candidates removed. */
   removed: number[];
+  /** The step named for people (§4.6); null for T1. */
+  insight: Insight | null;
+  /** The rooms the step reasons about: T1 its room, T2 the room x would empty, T3 the k rooms. */
+  rooms: number[];
+  /** The segments it uses: T2 x's row or column (or both, a cross), T3 the k segments. */
+  segments: number[];
 }
 
 /**
@@ -116,7 +151,15 @@ export class Grader {
       if (counts.get(r) === 1) {
         const c = (this.p.roomCells[r] ?? []).find((x) => this.cand[x] === 1) as number;
         this.place(this.cand, this.ghost, c);
-        return { tech: T1, weight: WEIGHT_T1, placed: c, removed: [] };
+        return {
+          tech: T1,
+          weight: WEIGHT_T1,
+          placed: c,
+          removed: [],
+          insight: null,
+          rooms: [r],
+          segments: [],
+        };
       }
     }
     // T2 and T4 go over the tightest room first (ties: the lower id), cells in reading order
@@ -127,14 +170,23 @@ export class Grader {
       const x = this.findT2(U, order);
       if (x !== null) {
         this.cand[x] = 0;
-        return { tech: T2, weight: WEIGHT_T2, placed: null, removed: [x] };
+        const why = this.explainT2(x);
+        return { tech: T2, weight: WEIGHT_T2, placed: null, removed: [x], ...why };
       }
     }
     if (maxTech >= T3) {
       const t3 = this.findT3(U);
       if (t3) {
         for (const c of t3.removed) this.cand[c] = 0;
-        return { tech: T3, weight: WEIGHT_T3_BASE + t3.k, placed: null, removed: t3.removed };
+        return {
+          tech: T3,
+          weight: WEIGHT_T3_BASE + t3.k,
+          placed: null,
+          removed: t3.removed,
+          insight: 'count',
+          rooms: t3.rooms,
+          segments: t3.segments,
+        };
       }
     }
     if (maxTech >= T4 && allowT4) {
@@ -142,12 +194,75 @@ export class Grader {
         for (const x of this.p.roomCells[X] ?? []) {
           if (this.cand[x] === 1 && this.contradicts(x)) {
             this.cand[x] = 0;
-            return { tech: T4, weight: WEIGHT_T4, placed: null, removed: [x] };
+            return {
+              tech: T4,
+              weight: WEIGHT_T4,
+              placed: null,
+              removed: [x],
+              insight: 'chain',
+              rooms: [X],
+              segments: [],
+            };
           }
         }
       }
     }
     return 'stuck';
+  }
+
+  /**
+   * Why the T2 step that just removed candidate `x` holds (GENERATOR.md §4.6): of the unsettled
+   * rooms whose candidates all lie in x's sight, the one with the simplest name (`shape`, `lamp`,
+   * `line`, `cross`), and x's segments that hold its candidates. Removing x leaves those rooms as
+   * they were, so it reads the state after the step.
+   */
+  private explainT2(x: number): { insight: Insight; rooms: number[]; segments: number[] } {
+    const p = this.p;
+    const row = p.rowSeg[x] as number;
+    const col = p.colSeg[x] as number;
+    const X = p.roomOf[x] as number;
+    let best = -1;
+    let room = -1;
+    let segments: number[] = [];
+    for (let Y = 0; Y < p.roomCount; Y++) {
+      if (Y === X || (this.ghost[Y] as number) >= 0) continue;
+      let inRow = true;
+      let inCol = true;
+      let any = false;
+      let seen = true;
+      for (const c of p.roomCells[Y] ?? []) {
+        if (this.cand[c] !== 1) continue;
+        any = true;
+        const r = p.rowSeg[c] === row;
+        const k = p.colSeg[c] === col;
+        if (!r && !k) {
+          seen = false;
+          break;
+        }
+        inRow &&= r;
+        inCol &&= k;
+      }
+      if (!any || !seen) continue;
+      let name: Insight = 'cross';
+      if (inRow || inCol) {
+        const segOf = inRow ? p.rowSeg : p.colSeg;
+        const seg = inRow ? row : col;
+        const cells = p.roomCells[Y] ?? [];
+        if (cells.every((c) => !p.candidate[c] || segOf[c] === seg)) {
+          // the room's starting candidates already lie there: its shape, or lamp light
+          name = cells.every((c) => p.objects[c] !== '.' || segOf[c] === seg) ? 'shape' : 'lamp';
+        } else name = 'line';
+      }
+      const rank = INSIGHTS.indexOf(name);
+      if (best < 0 || rank < best) {
+        best = rank;
+        room = Y;
+        segments = inRow ? [row] : inCol ? [col] : [row, col];
+      }
+      if (best === 0) break;
+    }
+    if (best < 0) throw new Error(`explainT2: no room explains the removal of ${String(x)}`);
+    return { insight: INSIGHTS[best] as Insight, rooms: [room], segments };
   }
 
   /** T0: a ghost on `c` settles its room and removes every cell it sees. */
@@ -187,7 +302,9 @@ export class Grader {
    * column segments, never mixed) fill them, so the other rooms' candidates there go. By k, rows
    * before columns, room sets in lexicographic order; only a set that removes something counts.
    */
-  private findT3(U: readonly number[]): { k: number; removed: number[] } | null {
+  private findT3(
+    U: readonly number[],
+  ): { k: number; removed: number[]; rooms: number[]; segments: number[] } | null {
     const kMax = Math.min(T3_K_MAX, U.length);
     for (let k = T3_K_MIN; k <= kMax; k++) {
       for (const segOf of [this.p.rowSeg, this.p.colSeg]) {
@@ -200,7 +317,8 @@ export class Grader {
         }
         const pool = U.filter((r) => (segsOf.get(r) as Set<number>).size <= k);
         const combo: number[] = [];
-        const search = (start: number): number[] | null => {
+        type Found = { removed: number[]; rooms: number[]; segments: number[] };
+        const search = (start: number): Found | null => {
           if (combo.length === k) {
             const union = new Set<number>();
             for (const r of combo) for (const s of segsOf.get(r) as Set<number>) union.add(s);
@@ -212,7 +330,12 @@ export class Grader {
                   removed.push(c);
               }
             }
-            return removed.length > 0 ? removed.sort((a, b) => a - b) : null;
+            if (removed.length === 0) return null;
+            return {
+              removed: removed.sort((a, b) => a - b),
+              rooms: [...combo],
+              segments: [...union].sort((a, b) => a - b),
+            };
           }
           for (let i = start; i < pool.length; i++) {
             combo.push(pool[i] as number);
@@ -222,8 +345,8 @@ export class Grader {
           }
           return null;
         };
-        const removed = search(0);
-        if (removed) return { k, removed };
+        const found = search(0);
+        if (found) return { k, ...found };
       }
     }
     return null;
@@ -259,10 +382,12 @@ export class Grader {
 export function grade(p: Puzzle, opts: GradeOptions): GradeResult {
   const g = new Grader(p);
   const path: Tech[] = [];
+  const insights: Insight[][] = [];
   let d = 0;
   let t4 = 0;
   const maxT4 = opts.maxT4 ?? Number.POSITIVE_INFINITY;
   let ok = true;
+  let episode: Insight[] | null = null;
   while (g.unsettled().length > 0) {
     const s = g.step(opts.maxTech, t4 < maxT4);
     if (s === 'stuck' || s === 'contradiction') {
@@ -272,15 +397,26 @@ export function grade(p: Puzzle, opts: GradeOptions): GradeResult {
     path.push(s.tech);
     d += s.weight;
     if (s.tech === T4) t4++;
+    // the insight names come from the same pass (D67): no second grader run
+    if (s.tech === T1) {
+      episode = null;
+      continue;
+    }
+    if (!episode) {
+      episode = [];
+      insights.push(episode);
+    }
+    episode.push(s.insight as Insight);
   }
   const placed = Array.from(g.ghost).filter((c) => c >= 0);
-  if (!ok) return { ok, path, placed, grade: null };
+  if (!ok) return { ok, path, insights, placed, grade: null };
   const t = TECHS.map((tech) => path.filter((s) => s === tech).length) as Grade['t'];
   const [n1, n2, n3, n4] = t;
   const empty = p.objects.filter((o) => o === '.').length;
   return {
     ok,
     path,
+    insights,
     placed,
     grade: {
       d,

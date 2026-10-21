@@ -1,71 +1,104 @@
 import Phaser from 'phaser';
 import {
+  CARRY_SCALE,
+  COLOR_FLOORS,
+  COLOR_FLOOR_INKS,
   COLOR_GLANCE,
-  COLOR_GLOW,
-  COLOR_GRID,
-  COLOR_LIT,
+  COLOR_HATCH,
+  COLOR_HATCH_EDGE,
   COLOR_MARK,
-  COLOR_ROOM_PATTERNS,
-  COLOR_ROOM_TONES,
   COLOR_SEEN_LINE,
+  COLOR_SETTLED_RING,
+  COLOR_SETTLED_WASH,
   COLOR_SOLVED_FRAME,
   COLOR_WALL,
   GHOST_SHARE,
   GLANCE_ALPHA,
   GLANCE_MS,
   GLIDE_MS,
-  GLOW_ALPHA,
   GLOW_IN_MS,
   GLOW_OUT_MS,
-  LIT_ALPHA,
+  GRID_ALPHA,
+  HINT_TREMBLE_SWINGS,
   LIT_FLASH_ALPHA,
   LIT_FLASH_MS,
   MARK_MS,
   MARK_SHARE,
   NUDGE_MS,
   NUDGE_PX,
-  PATTERN_DOT,
+  PATTERN_CHECK,
+  PATTERN_DIAMOND,
   PATTERN_LINE,
   PATTERN_STEP,
   POP_MS,
   POP_SCALE,
   REMOVE_MS,
   REMOVE_RISE,
+  RING_INSET,
+  RING_WIDTH,
   SEEN_DOT,
   SEEN_DOT_STEP,
   SEEN_LINE_ALPHA,
   SEEN_LINE_FLASH_ALPHA,
   SEEN_LINE_OFF_MS,
   SEEN_LINE_ON_MS,
-  SHIVER_AGAIN_MS,
-  SHIVER_AGAIN_PX,
   SHIVER_PX,
   SHIVER_SWINGS,
   SHIVER_SWING_MS,
+  SETTLED_WASH_ALPHA,
+  SETTLE_HOP_PX,
+  SETTLE_MS,
+  SETTLE_SCALE,
+  WIN_FLASH_ALPHA,
   WIN_FLASH_MS,
+  WIN_HIT_STOP_MS,
   WIN_HOP_MS,
   WIN_HOP_PX,
   WIN_STEP_MAX_MS,
   WIN_SWEEP_MS,
+  WIN_TURN_SCALE,
+  WIN_WAVES,
+  WIN_WAVE_DEG,
+  WIN_WAVE_MS,
 } from '../config';
+import type { HintExplain } from '../core/hint';
 import type { GhostStatus, PlayEvent, StrokeMode } from '../core/state';
+import type { DemoScript } from './demo';
+import { DemoPlayer } from './demo-play';
+import { ProgressDots } from './dots';
 import { CAP_KEY, FURNITURE_KEY, GHOST_KEY, LAMP_KEY, MARK_KEY } from './graybox';
 import { cellAt, cellCenter, type Layout } from './layout';
-import { wallRuns, type Pattern, type RoomStyle } from './look';
+import {
+  dashes,
+  dotsBetween,
+  hatch,
+  ringSegments,
+  wallRuns,
+  type Pattern,
+  type Polygon,
+  type RoomStyle,
+} from './look';
 import { Pool } from './pool';
+import { ReasonDisplay } from './reason';
+import { Timeline } from './timeline';
 import type { BoardView, ViewState } from './view';
 
 /** What the display shows, read back from its objects (the e2e compares it with the rules). */
 export interface DrawnState extends ViewState {
   /** Ghosts drawn with a nightcap. */
   residents: number[];
+  /** Rooms whose progress dot is full (D75). */
+  dots: number[];
 }
 
 interface GhostSprite {
   root: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
+  /** The body's scale at rest (its display size in the cell). */
+  rest: number;
   motion: Phaser.Tweens.Tween | null;
   shake: Phaser.Tweens.Tween | null;
+  bob: Phaser.Tweens.Tween | null;
 }
 
 const HALF = 0.5;
@@ -92,7 +125,10 @@ export class BoardDisplay {
   readonly root: Phaser.GameObjects.Container;
   private readonly keys: string[] = [];
   private readonly glowLayer: Phaser.GameObjects.Container;
-  private readonly glow: Phaser.GameObjects.Graphics[] = [];
+  /** Per room, its settled cue: the teal wash under the walls and the dashed ring above them. */
+  private readonly wash: Phaser.GameObjects.Graphics[] = [];
+  private readonly ring: Phaser.GameObjects.Graphics[] = [];
+  private readonly ringLayer: Phaser.GameObjects.Container;
   private readonly glowTween: (Phaser.Tweens.Tween | null)[] = [];
   private readonly objectLayer: Phaser.GameObjects.Container;
   private readonly objects = new Map<number, Phaser.GameObjects.Image>();
@@ -107,13 +143,19 @@ export class BoardDisplay {
   /** Motions the screen must finish before it equals the rules (the e2e waits for none). */
   private readonly moving = new Set<Phaser.Tweens.Tween>();
   private readonly tweens = new Set<Phaser.Tweens.Tween>();
-  private readonly timers = new Set<Phaser.Time.TimerEvent>();
   /**
    * Effect drawings, reused (CLAUDE.md "Performance"; audit 2026-10-21, DÜŞÜK 9): the sight-line
    * and lamp flashes and the glances over the board, and the win's room flashes under the walls.
    */
   private readonly fxPool: Pool<Phaser.GameObjects.Graphics>;
   private readonly flashPool: Pool<Phaser.GameObjects.Graphics>;
+  /** The progress dots (D75), the hint's reason (D74) and the teaching demonstration (D70). */
+  private readonly dotsRow: ProgressDots;
+  private readonly dotMotions: Timeline;
+  private readonly reason: ReasonDisplay;
+  private readonly demoPlayer: DemoPlayer;
+  /** A ghost lifted by a drag (D72): the cell it was lifted from and its sprite. */
+  private carried: { cell: number; sprite: GhostSprite } | null = null;
   private destroyed = false;
 
   constructor(
@@ -129,17 +171,17 @@ export class BoardDisplay {
     const wallKey = `gb-walls-${String(serial)}`;
     this.keys.push(floorKey, wallKey);
 
-    // the floor: room tones and wallpaper, the thin cell grid
+    // the floor: each room's colour and wallpaper (D71), the faint cell grid
     const g = scene.make.graphics({}, false);
     for (let i = 0; i < h.size; i++) {
       const style = styles[h.roomOf[i] as number] as RoomStyle;
       const x = (i % h.n) * cell;
       const y = Math.floor(i / h.n) * cell;
-      g.fillStyle(COLOR_ROOM_TONES[style.tone] as number, 1);
+      g.fillStyle(COLOR_FLOORS[style.level]?.[style.hue] as number, 1);
       g.fillRect(x, y, cell, cell);
-      this.pattern(g, style.pattern, COLOR_ROOM_PATTERNS[style.tone] as number, x, y);
+      this.pattern(g, style.pattern, COLOR_FLOOR_INKS[style.level]?.[style.hue] as number, x, y);
     }
-    g.lineStyle(layout.grid, COLOR_GRID, 1);
+    g.lineStyle(layout.grid, COLOR_WALL, GRID_ALPHA);
     for (let k = 1; k < h.n; k++) {
       g.lineBetween(k * cell, 0, k * cell, board.height);
       g.lineBetween(0, k * cell, board.width, k * cell);
@@ -147,13 +189,20 @@ export class BoardDisplay {
     g.generateTexture(floorKey, board.width, board.height);
     g.clear();
 
-    // the warm wash of lit cells, then the walls: half a wall outside the board on every side,
-    // each run long enough to close its corners
+    // the light hatch over lit cells (amber stripes with a brown edge, D71), then the walls: half
+    // a wall outside the board on every side, each run long enough to close its corners
     const pad = wall / 2;
-    g.fillStyle(COLOR_LIT, LIT_ALPHA);
+    const { stripes, edges } = hatch();
+    const shape = (p: Polygon, x0: number, y0: number): Phaser.Types.Math.Vector2Like[] =>
+      p.map(([x, y]) => ({ x: x0 + x * cell, y: y0 + y * cell }));
     for (let i = 0; i < h.size; i++) {
-      if (h.lit[i])
-        g.fillRect(pad + (i % h.n) * cell, pad + Math.floor(i / h.n) * cell, cell, cell);
+      if (!h.lit[i]) continue;
+      const x0 = pad + (i % h.n) * cell;
+      const y0 = pad + Math.floor(i / h.n) * cell;
+      g.fillStyle(COLOR_HATCH, 1);
+      for (const p of stripes) g.fillPoints(shape(p, x0, y0), true);
+      g.fillStyle(COLOR_HATCH_EDGE, 1);
+      for (const p of edges) g.fillPoints(shape(p, x0, y0), true);
     }
     g.fillStyle(COLOR_WALL, 1);
     for (const r of wallRuns(h)) {
@@ -169,11 +218,13 @@ export class BoardDisplay {
 
     this.root = scene.add.container(0, 0);
     this.glowLayer = scene.add.container(0, 0);
+    this.ringLayer = scene.add.container(0, 0);
     this.objectLayer = scene.add.container(0, 0);
     this.markLayer = scene.add.container(0, 0);
     this.preview = scene.add.graphics();
     this.lines = scene.add.graphics();
     this.fx = scene.add.container(0, 0);
+    const demoLayer = scene.add.container(0, 0);
     this.ghostLayer = scene.add.container(0, 0);
     this.frame = scene.add.graphics();
     const pool = (layer: Phaser.GameObjects.Container): Pool<Phaser.GameObjects.Graphics> =>
@@ -191,23 +242,62 @@ export class BoardDisplay {
       scene.add.image(board.x, board.y, floorKey).setOrigin(0, 0),
       this.glowLayer,
       scene.add.image(board.x - pad, board.y - pad, wallKey).setOrigin(0, 0),
+      this.ringLayer,
       this.objectLayer,
       this.markLayer,
       this.preview,
       this.lines,
       this.fx,
+      demoLayer,
       this.ghostLayer,
       this.frame,
     ]);
+    this.dotMotions = new Timeline(scene, this.moving);
+    this.dotsRow = new ProgressDots(scene, layout, styles, view.glowing, this.dotMotions);
+    this.root.add(this.dotsRow.root);
+    this.reason = new ReasonDisplay(scene, layout, h, this.glowLayer, this.fx);
+    this.demoPlayer = new DemoPlayer({
+      scene,
+      layout,
+      under: this.glowLayer,
+      over: demoLayer,
+      body: (c) => this.ghosts.get(c)?.body ?? null,
+      object: (c) => this.objects.get(c) ?? null,
+      ghostSize: cell * GHOST_SHARE,
+    });
 
+    // the settled cue of each room (D71): a faint teal wash, and a dashed ring inside its walls
+    const inset = (wall / 2 + RING_INSET + RING_WIDTH / 2) / cell;
     for (let room = 0; room < h.roomCount; room++) {
-      const glow = scene.add.graphics();
-      glow.fillStyle(COLOR_GLOW, GLOW_ALPHA);
-      for (const c of h.roomCells[room] ?? []) this.fillCell(glow, c);
-      glow.setAlpha(view.glowing.has(room) ? 1 : 0);
-      this.glow.push(glow);
+      const on = view.glowing.has(room) ? 1 : 0;
+      const wash = scene.add.graphics();
+      wash.fillStyle(COLOR_SETTLED_WASH, SETTLED_WASH_ALPHA);
+      for (const c of h.roomCells[room] ?? []) this.fillCell(wash, c);
+      // every dash in one path, stroked once: a ring costs one draw call a frame, not one a dash
+      const ring = scene.add.graphics();
+      ring.lineStyle(RING_WIDTH, COLOR_SETTLED_RING, 1);
+      ring.beginPath();
+      const path = {
+        lineBetween: (x1: number, y1: number, x2: number, y2: number): void => {
+          ring.moveTo(x1, y1);
+          ring.lineTo(x2, y2);
+        },
+      };
+      for (const piece of ringSegments(h, room, inset)) {
+        dashes(
+          path,
+          board.x + piece.x1 * cell,
+          board.y + piece.y1 * cell,
+          board.x + piece.x2 * cell,
+          board.y + piece.y2 * cell,
+        );
+      }
+      ring.strokePath();
+      this.wash.push(wash.setAlpha(on));
+      this.ring.push(ring.setAlpha(on));
       this.glowTween.push(null);
-      this.glowLayer.add(glow);
+      this.glowLayer.add(wash);
+      this.ringLayer.add(ring);
     }
     for (let i = 0; i < h.size; i++) {
       const o = h.objects[i];
@@ -224,18 +314,6 @@ export class BoardDisplay {
     this.frame.strokeRect(board.x, board.y, board.width, board.height);
     this.frame.setAlpha(view.solved ? 1 : 0);
     this.drawLines();
-
-    // a seen ghost shivers again every SHIVER_AGAIN_MS while the conflict lasts (GDD §3a)
-    const again = scene.time.addEvent({
-      delay: SHIVER_AGAIN_MS,
-      loop: true,
-      callback: () => {
-        for (const [c, s] of this.ghosts) {
-          if (this.view.ghosts.get(c) === 'seen' && !s.shake) this.shiver(s, SHIVER_AGAIN_PX);
-        }
-      },
-    });
-    this.timers.add(again);
   }
 
   // ---- playback (D41) ---------------------------------------------------------------------------
@@ -250,6 +328,7 @@ export class BoardDisplay {
           arrived.add(e.cell);
           break;
         case 'relocated':
+        case 'moved':
           this.glide(e.from, e.to);
           arrived.add(e.to);
           break;
@@ -277,11 +356,20 @@ export class BoardDisplay {
           }
           break;
         }
-        case 'settled':
+        case 'settled': {
           this.glowTo(e.room, true);
+          this.dotsRow.fill(e.room, true);
+          // the room's ghost bobs: success moves farther and lasts longer than any failure (D73)
+          const cell = [...this.view.ghosts.keys()].find(
+            (c) => this.view.house.roomOf[c] === e.room,
+          );
+          const g = cell === undefined ? undefined : this.ghosts.get(cell);
+          if (g) this.bob(g);
           break;
+        }
         case 'unsettled':
           this.glowTo(e.room, false);
+          this.dotsRow.fill(e.room, false);
           break;
         case 'solved':
           this.frame.setAlpha(1);
@@ -347,8 +435,9 @@ export class BoardDisplay {
       ghosts: ghosts.sort((a, b) => a[0] - b[0]),
       residents: residents.sort((a, b) => a - b),
       marks: marks.sort((a, b) => a - b),
-      settled: this.glow.flatMap((g, room) => (g.alpha >= HALF ? [room] : [])),
+      settled: this.wash.flatMap((g, room) => (g.alpha >= HALF ? [room] : [])),
       solved: this.frame.alpha >= HALF,
+      dots: this.dotsRow.filled(),
     };
   }
 
@@ -363,18 +452,20 @@ export class BoardDisplay {
   // ---- the win beat -----------------------------------------------------------------------------
 
   /**
-   * Rooms flash in room-id order and the ghosts hop (GDD §3a, in graybox form). The beat's length
-   * is the scene's (WIN_BEAT_MS), so a new board for a new screen size never cuts it short.
+   * The finale (GDD §3a, D73, in graybox form): after the hit stop the rooms flash in room-id order,
+   * then every ghost hops and turns to the camera, then waves twice, and the solve time (`seconds`)
+   * ticks in where the progress dots were. Its length is the scene's (WIN_BEAT_MS), so a new board
+   * for a new screen size never cuts it short.
    */
-  celebrate(): void {
+  celebrate(seconds: number): void {
     const h = this.view.house;
     const step = Math.min(WIN_STEP_MAX_MS, WIN_SWEEP_MS / h.roomCount);
     this.frame.setAlpha(1);
     for (let room = 0; room < h.roomCount; room++) {
-      this.later(room * step, () => {
+      this.later(WIN_HIT_STOP_MS + room * step, () => {
         // under the walls, so the rooms stay outlined while they flash
         const flash = this.effect(this.flashPool);
-        flash.fillStyle(COLOR_SOLVED_FRAME, GLOW_ALPHA);
+        flash.fillStyle(COLOR_SOLVED_FRAME, WIN_FLASH_ALPHA);
         for (const c of h.roomCells[room] ?? []) this.fillCell(flash, c);
         this.tween({
           targets: flash,
@@ -386,23 +477,105 @@ export class BoardDisplay {
         });
       });
     }
-    for (const s of this.ghosts.values()) {
-      this.tween({
-        targets: s.body,
-        y: -WIN_HOP_PX,
-        duration: WIN_HOP_MS,
-        yoyo: true,
-        ease: 'Sine.easeOut',
-      });
+    const hopAt = WIN_HIT_STOP_MS + WIN_SWEEP_MS;
+    this.later(hopAt, () => {
+      for (const s of this.ghosts.values()) {
+        this.tween({
+          targets: s.body,
+          y: -WIN_HOP_PX,
+          duration: WIN_HOP_MS / 2,
+          yoyo: true,
+          ease: 'Sine.easeOut',
+        });
+        // the sheet narrows as the ghost turns to the camera, and back
+        this.tween({
+          targets: s.body,
+          scaleX: s.rest * WIN_TURN_SCALE,
+          duration: WIN_HOP_MS / 2,
+          yoyo: true,
+          onStop: () => s.body.setScale(s.rest),
+        });
+      }
+    });
+    this.later(hopAt + WIN_HOP_MS, () => {
+      for (const s of this.ghosts.values()) {
+        const rest = (): void => {
+          s.body.setAngle(0);
+        };
+        this.tween({
+          targets: s.body,
+          angle: { from: -WIN_WAVE_DEG, to: WIN_WAVE_DEG },
+          duration: WIN_WAVE_MS / 2,
+          yoyo: true,
+          repeat: WIN_WAVES - 1,
+          ease: 'Sine.easeInOut',
+          onComplete: rest,
+          onStop: rest,
+        });
+      }
+    });
+    this.dotsRow.finale(seconds, hopAt + WIN_HOP_MS + WIN_WAVES * WIN_WAVE_MS);
+  }
+
+  // ---- carrying a ghost (D72), the hint's reason (D74), the demonstrations (D70) ---------------
+
+  /**
+   * A drag lifted the ghost on `from`: it follows the pointer from cell to cell, a little larger
+   * (on its own cell while the pointer is off the board). A resident is never lifted.
+   */
+  carry(from: number, over: number): void {
+    if (this.view.isResident(from)) return;
+    const s = this.carried?.sprite ?? this.ghosts.get(from);
+    if (!s) return;
+    if (!this.carried) {
+      this.settle(s);
+      s.root.setScale(CARRY_SCALE);
+      this.carried = { cell: from, sprite: s };
     }
+    const at = cellCenter(this.layout, over >= 0 ? over : this.carried.cell);
+    s.root.setPosition(at.x, at.y);
+  }
+
+  /**
+   * The carried ghost is put down, after the scene played the drop's events: a ghost that moved
+   * has glided on already; one that stayed glides back to its cell.
+   */
+  endCarry(): void {
+    const c = this.carried;
+    if (!c) return;
+    this.carried = null;
+    if (this.ghosts.get(c.cell) === c.sprite) this.glide(c.cell, c.cell);
+    else c.sprite.root.setScale(1);
+  }
+
+  /** The hint's first press (D74): its reason, and a wrong ghost trembles. */
+  showReason(r: HintExplain): void {
+    this.reason.show(r);
+    const s = r.kind === 'remove' ? this.ghosts.get(r.cell) : undefined;
+    if (s) this.shiver(s, SHIVER_PX, HINT_TREMBLE_SWINGS);
+  }
+
+  clearReason(): void {
+    this.reason.clear();
+  }
+
+  /** The house's teaching demonstration (D70); `endDemo` stops it and leaves the board as it was. */
+  demo(script: DemoScript): void {
+    this.demoPlayer.play(script);
+  }
+
+  endDemo(): void {
+    this.demoPlayer.stop();
   }
 
   /** Stops every motion and timer and frees the board's objects and textures. */
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    for (const t of this.timers) t.remove(false);
-    this.timers.clear();
+    this.dotMotions.stop();
+    this.reason.clear();
+    this.demoPlayer.stop();
+    this.carried = null;
     for (const t of [...this.tweens]) t.stop();
     this.tweens.clear();
     this.moving.clear();
@@ -433,12 +606,16 @@ export class BoardDisplay {
     return pool.acquire().setVisible(true).setAlpha(1);
   }
 
+  /** `fn` after `ms` on the tween clock, which every motion runs on (src/game/timeline.ts). */
   private later(ms: number, fn: () => void): void {
-    const ev = this.scene.time.delayedCall(ms, () => {
-      this.timers.delete(ev);
-      if (!this.destroyed) fn();
+    this.tween({
+      targets: { step: 0 },
+      step: 1,
+      duration: ms,
+      onComplete: () => {
+        if (!this.destroyed) fn();
+      },
     });
-    this.timers.add(ev);
   }
 
   private fillCell(g: Phaser.GameObjects.Graphics, c: number): void {
@@ -454,7 +631,6 @@ export class BoardDisplay {
     x: number,
     y: number,
   ): void {
-    if (p === 'plain') return;
     const { cell } = this.layout;
     const step = PATTERN_STEP * cell;
     const count = Math.round(1 / PATTERN_STEP);
@@ -462,9 +638,28 @@ export class BoardDisplay {
     g.fillStyle(color, 1);
     for (let k = 0; k < count; k++) {
       const o = (k + HALF) * step;
-      if (p === 'dots') {
-        for (let j = 0; j < count; j++)
-          g.fillCircle(x + o, y + (j + HALF) * step, PATTERN_DOT * cell);
+      if (p === 'diamonds') {
+        // a small diamond on every point of the grid
+        const h = PATTERN_DIAMOND * cell;
+        for (let j = 0; j < count; j++) {
+          const cx = x + o;
+          const cy = y + (j + HALF) * step;
+          g.fillPoints(
+            [
+              { x: cx, y: cy - h },
+              { x: cx + h, y: cy },
+              { x: cx, y: cy + h },
+              { x: cx - h, y: cy },
+            ],
+            true,
+          );
+        }
+      } else if (p === 'checks') {
+        // small squares on every other point of the grid, staggered row by row
+        const side = PATTERN_CHECK * cell;
+        for (let j = k % 2; j < count; j += 2) {
+          g.fillRect(x + o - side / 2, y + (j + HALF) * step - side / 2, side, side);
+        }
       } else if (p === 'vstripes') {
         g.lineBetween(x + o, y, x + o, y + cell);
       } else if (p === 'hstripes') {
@@ -533,7 +728,7 @@ export class BoardDisplay {
       root.add(this.scene.add.image(0, 0, CAP_KEY).setDisplaySize(size, size));
     }
     this.ghostLayer.add(root);
-    const s: GhostSprite = { root, body, motion: null, shake: null };
+    const s: GhostSprite = { root, body, rest: body.scaleX, motion: null, shake: null, bob: null };
     this.ghosts.set(c, s);
     return s;
   }
@@ -586,6 +781,7 @@ export class BoardDisplay {
     this.ghosts.delete(c);
     this.settle(s);
     s.shake?.stop();
+    s.bob?.stop();
     s.root.setData('dying', true);
     this.tween(
       {
@@ -606,7 +802,28 @@ export class BoardDisplay {
     this.tween({ targets: target, x: target.x + NUDGE_PX, duration: NUDGE_MS / 2, yoyo: true });
   }
 
-  private shiver(s: GhostSprite, px: number): void {
+  /** A settle: the ghost grows a little and hops, then lands (D73). */
+  private bob(s: GhostSprite): void {
+    s.bob?.stop();
+    const rest = (): void => {
+      s.body.setScale(s.rest);
+      s.body.y = 0;
+      s.bob = null;
+    };
+    s.bob = this.tween({
+      targets: s.body,
+      scaleX: s.rest * SETTLE_SCALE,
+      scaleY: s.rest * SETTLE_SCALE,
+      y: -SETTLE_HOP_PX,
+      duration: SETTLE_MS / 2,
+      yoyo: true,
+      ease: 'Sine.easeOut',
+      onComplete: rest,
+      onStop: rest,
+    });
+  }
+
+  private shiver(s: GhostSprite, px: number, swings = SHIVER_SWINGS): void {
     s.shake?.stop();
     const rest = (): void => {
       s.body.x = 0;
@@ -617,22 +834,26 @@ export class BoardDisplay {
       x: { from: -px, to: px },
       duration: SHIVER_SWING_MS,
       yoyo: true,
-      repeat: SHIVER_SWINGS - 1,
+      repeat: swings - 1,
       onComplete: rest,
       onStop: rest,
     });
   }
 
   private glowTo(room: number, on: boolean): void {
-    const g = this.glow[room];
-    if (!g) return;
+    const wash = this.wash[room];
+    const ring = this.ring[room];
+    if (!wash || !ring) return;
     this.glowTween[room]?.stop();
     this.glowTween[room] = this.tween(
       {
-        targets: g,
+        targets: [wash, ring],
         alpha: on ? 1 : 0,
         duration: on ? GLOW_IN_MS : GLOW_OUT_MS,
-        onStop: () => g.setAlpha(on ? 1 : 0),
+        onStop: () => {
+          wash.setAlpha(on ? 1 : 0);
+          ring.setAlpha(on ? 1 : 0);
+        },
       },
       true,
     );
@@ -642,14 +863,8 @@ export class BoardDisplay {
   private dots(g: Phaser.GameObjects.Graphics, a: number, b: number): void {
     const p = cellCenter(this.layout, a);
     const q = cellCenter(this.layout, b);
-    const count = Math.max(
-      1,
-      Math.round(Math.hypot(q.x - p.x, q.y - p.y) / (SEEN_DOT_STEP * this.layout.cell)),
-    );
-    for (let k = 1; k < count; k++) {
-      const t = k / count;
-      g.fillCircle(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t, SEEN_DOT * this.layout.cell);
-    }
+    const r = SEEN_DOT * this.layout.cell;
+    for (const d of dotsBetween(p, q, SEEN_DOT_STEP * this.layout.cell)) g.fillCircle(d.x, d.y, r);
   }
 
   /** The faint dotted line between every two ghosts that see each other, while they do (D59). */
@@ -677,7 +892,7 @@ export class BoardDisplay {
     if (lamps.length === 0) return;
     const h = this.view.house;
     const g = this.effect(this.fxPool);
-    g.fillStyle(COLOR_LIT, LIT_FLASH_ALPHA);
+    g.fillStyle(COLOR_HATCH, LIT_FLASH_ALPHA);
     for (let i = 0; i < h.size; i++) {
       if ((h.lampsOf[i] ?? []).some((l) => lamps.includes(l))) this.fillCell(g, i);
     }

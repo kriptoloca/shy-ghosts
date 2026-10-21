@@ -8,11 +8,16 @@ export interface Tally {
   placements: number;
   removals: number;
   relocations: number;
+  /** Ghosts dragged into another room (D72). */
+  carried: number;
   nudges: number;
   strokes: number;
+  /** Drags that carried a ghost, wherever it ended (D72). */
+  drags: number;
   marked: number;
   erased: number;
   undos: number;
+  /** Hints asked for: counted at the first press, which shows the reason (D74). */
   hints: number;
   /**
    * Moves after which a ghost shivers that did not before: one per move, however many ghosts
@@ -34,8 +39,10 @@ export class HouseLog {
     placements: 0,
     removals: 0,
     relocations: 0,
+    carried: 0,
     nudges: 0,
     strokes: 0,
+    drags: 0,
     marked: 0,
     erased: 0,
     undos: 0,
@@ -50,13 +57,14 @@ export class HouseLog {
     const t = this.tally;
     if (kind === 'tap') t.taps++;
     if (kind === 'stroke') t.strokes++;
+    if (kind === 'drag') t.drags++;
     if (kind === 'undo' && events.length > 0) t.undos++;
-    if (kind === 'hint' && events.length > 0) t.hints++;
     if (events.length > 0) this.moves.push(events);
     if (kind === 'undo') return;
     for (const e of events) {
       if (e.type === 'placed') t.placements++;
       else if (e.type === 'relocated') t.relocations++;
+      else if (e.type === 'moved') t.carried++;
       else if (e.type === 'removed') t.removals++;
       else if (e.type === 'nudged') t.nudges++;
       else if (e.type === 'marked' && kind === 'stroke') {
@@ -67,5 +75,10 @@ export class HouseLog {
     if (events.some((e) => e.type === 'status' && e.to === 'seen' && e.from !== 'seen')) {
       t.shivers++;
     }
+  }
+
+  /** The hint's first press showed its reason: one hint, whatever completes it (D74). */
+  hinted(): void {
+    this.tally.hints++;
   }
 }

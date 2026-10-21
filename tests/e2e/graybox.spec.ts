@@ -1,12 +1,24 @@
-import { expect, type Page } from '@playwright/test';
-import { parseHouse, type HouseModel } from '../../src/core/house';
-import type { DebugHouse, DebugRecord } from '../../src/dev/debug';
-import type { DrawnState } from '../../src/game/board';
-import type { ViewState } from '../../src/game/view';
-import { SAVE_KEY } from '../../src/platform/storage';
+import { expect } from '@playwright/test';
+import { WIN_SKIP_FROM_MS } from '../../src/config';
 import { RULE_WORDS } from '../support/rule-words';
-import { Screen } from '../support/screen';
 import { CANVAS, TEST, TOUCHCANCEL_REPORT, platformPause, state, test, waitState } from './helpers';
+import {
+  button,
+  center,
+  corner,
+  drag,
+  emptyCells,
+  finishedReplays,
+  frames,
+  house,
+  model,
+  open,
+  press,
+  settledEqualsRules,
+  solve,
+  stored,
+  tap,
+} from './play';
 
 /**
  * The graybox loop (TASKS.md Epic 3, brief M1) on the dev build, by real taps, drags and touches:
@@ -21,142 +33,6 @@ const INTERACTIVE_MS = 3000;
 const TUTORIAL_MS = 60_000;
 /** Seconds of thinking without a move before a pause, a hidden page or a reload (YÜKSEK 2). */
 const IDLE_S = 3;
-
-async function open(page: Page, query: string): Promise<void> {
-  await page.goto(`${TEST}?${query}${CANVAS}`, { waitUntil: 'load' });
-  await waitState(page, (s) => s.scene === 'Game' && s.input && s.phase === 'play', 'the game');
-}
-
-async function center(page: Page, cell: number): Promise<{ x: number; y: number }> {
-  const p = await page.evaluate((c) => window.__ghostDebug?.cellCenter?.(c) ?? null, cell);
-  if (!p) throw new Error(`no cell ${String(cell)}`);
-  return p;
-}
-
-async function tap(page: Page, cell: number): Promise<void> {
-  const p = await center(page, cell);
-  await page.mouse.click(p.x, p.y);
-}
-
-async function drag(page: Page, from: number, to: number): Promise<void> {
-  const a = await center(page, from);
-  const b = await center(page, to);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move(b.x, b.y, { steps: 10 });
-  await page.mouse.up();
-}
-
-/** A HUD button's middle and radius in page px. */
-async function button(
-  page: Page,
-  name: 'undo' | 'hint',
-): Promise<{ x: number; y: number; r: number }> {
-  const p = await page.evaluate((n) => window.__ghostDebug?.buttonCenter?.(n) ?? null, name);
-  if (!p) throw new Error(`no button ${name}`);
-  return p;
-}
-
-/** A press on a HUD button, `off` of its radius up and left of its middle (0: the middle). */
-async function press(page: Page, name: 'undo' | 'hint', off = 0): Promise<void> {
-  const p = await button(page, name);
-  const d = (off * p.r) / Math.SQRT2;
-  await page.mouse.click(p.x - d, p.y - d);
-}
-
-/** A point on the canvas away from the board and the buttons (the top band's left end). */
-async function corner(page: Page): Promise<{ x: number; y: number }> {
-  return page.evaluate(() => {
-    const r = document.querySelector('canvas')?.getBoundingClientRect();
-    if (!r) throw new Error('no canvas');
-    return { x: r.left + 8, y: r.top + 8 };
-  });
-}
-
-/** Waits `n` animation frames: Phaser has stepped at least n − 1 times since. */
-async function frames(page: Page, n: number): Promise<void> {
-  await page.evaluate(
-    (count) =>
-      new Promise<void>((done) => {
-        let k = 0;
-        const step = (): void => {
-          k++;
-          if (k >= count) done();
-          else requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-      }),
-    n,
-  );
-}
-
-async function house(page: Page): Promise<DebugHouse> {
-  const h = await page.evaluate(() => window.__ghostDebug?.house?.());
-  if (!h) throw new Error('no house hook');
-  return h;
-}
-
-function model(h: DebugHouse): HouseModel {
-  return parseHouse({ ...h, solution: h.solution ?? [] });
-}
-
-function emptyCells(h: DebugHouse): number[] {
-  const m = model(h);
-  return [...Array(m.size).keys()].filter((c) => !m.blocked[c]);
-}
-
-/** Taps every cell of the solution that is not a given: the last tap wins the house. */
-async function solve(page: Page): Promise<number> {
-  const h = await house(page);
-  for (const c of h.solution ?? []) if (!h.givens.includes(c)) await tap(page, c);
-  return h.id;
-}
-
-/** The house in progress as the save holds it (the dev build stores in localStorage). */
-async function stored(page: Page): Promise<{ seconds: number; moves: number } | null> {
-  return page.evaluate((key) => {
-    const raw = localStorage.getItem(key);
-    const save = raw
-      ? (JSON.parse(raw) as { current: { seconds: number; moves: number } | null })
-      : null;
-    return save?.current ?? null;
-  }, SAVE_KEY);
-}
-
-/** Every event list played on the strict model screen (D52): no problem, and where it ends. */
-function replayed(h: DebugHouse, record: DebugRecord): ViewState {
-  const screen = new Screen(model(h), record.start);
-  for (const list of record.moves) screen.play(list);
-  expect(screen.problems).toEqual([]);
-  return screen.view();
-}
-
-/** Waits for every motion to end, then checks the screen against the rules and the model. */
-async function settledEqualsRules(page: Page): Promise<ViewState> {
-  await waitState(page, (s) => s.phase === 'play' && s.idle === true, 'the screen at rest');
-  const got = await page.evaluate(() => ({
-    drawn: window.__ghostDebug?.drawn?.(),
-    rules: window.__ghostDebug?.rules?.(),
-    events: window.__ghostDebug?.events?.(),
-  }));
-  const drawn = got.drawn as DrawnState;
-  const rules = got.rules as ViewState;
-  const h = await house(page);
-  expect(replayed(h, got.events as DebugRecord)).toEqual(rules);
-  const { residents, ...shown } = drawn;
-  expect(shown).toEqual(rules);
-  expect(residents).toEqual(h.givens.filter((g) => rules.ghosts.some(([c]) => c === g)));
-  return rules;
-}
-
-/** The house finished last, replayed on the model screen: it ends solved, as the rules did. */
-async function finishedReplays(page: Page, id: number): Promise<void> {
-  const prev = await page.evaluate(() => window.__ghostDebug?.previous?.() ?? null);
-  if (!prev) throw new Error('no finished house');
-  expect(prev.house.id).toBe(id);
-  expect(prev.rules.solved).toBe(true);
-  expect(replayed(prev.house, prev.events)).toEqual(prev.rules);
-}
 
 test('load → house 1 interactive within 3 s → houses 1–3 by real taps in under a minute', async ({
   page,
@@ -192,7 +68,9 @@ test('a conflict shows the seen state at once (house 1, the same row)', async ({
     [1, 'seen'],
   ]);
   const text = await page.evaluate(() => window.__ghostDebug?.visible?.() ?? '');
-  expect(text).toContain('ghosts: (0,0) hands over the eyes, nightcap; (0,1) hands over the eyes');
+  expect(text).toContain(
+    'figures: (0,0) both hands over its eyes, nightcap; (0,1) both hands over its eyes',
+  );
   expect(text).toContain('dotted lines: (0,0) to (0,1)');
   // two ghosts shiver, but it is one shivering placement (audit ORTA 6)
   const s = await state(page);
@@ -347,7 +225,7 @@ test('a press held on the hint from the win beat does nothing in the next house 
   await solve(page);
   expect((await state(page))?.phase).toBe('win');
   await page.mouse.move(hint.x, hint.y);
-  await page.mouse.down(); // during the beat: skips it
+  await page.mouse.down(); // early in the finale: ignored, and the press is dropped
   await waitState(page, (s) => s.shown === 2 && s.phase === 'play', 'house 2');
   await page.mouse.up();
   await frames(page, 3);
@@ -365,7 +243,9 @@ test('a tap in the beat skips it; a tap on the hint in the slide only ends the s
   const away = await corner(page);
   await solve(page);
   expect((await state(page))?.phase).toBe('win');
-  await page.mouse.click(away.x, away.y); // the beat is skipped: the slide starts
+  // from 600 ms into the finale a tap skips it (D73)
+  await waitState(page, (s) => (s.beatMs ?? 0) >= WIN_SKIP_FROM_MS, 'the finale skippable');
+  await page.mouse.click(away.x, away.y); // the finale is skipped: the slide starts
   await page.mouse.click(hint.x, hint.y); // the slide ends, and nothing else happens
   await waitState(page, (s) => s.shown === 2 && s.phase === 'play', 'house 2');
   await frames(page, 3);
@@ -414,6 +294,11 @@ test('?playtest=1 hides the solution from the hooks; visible() names no rule', a
   expect(rows).toContain('@');
   expect(rows).toContain('~');
   expect(got.text.match(RULE_WORDS)?.[0] ?? null).toBeNull();
+  // the hint's reason shows where to look, never the cell it would fill (D74)
+  await press(page, 'hint');
+  const reason = (await waitState(page, (s) => s.hints === 1, 'the reason')).hintReason;
+  expect(reason?.kind).toBe('place');
+  expect(reason && 'cell' in reason).toBe(false);
 });
 
 test('a house restored already solved plays its win and moves on by itself (D49)', async ({
@@ -443,20 +328,30 @@ test('a house restored already solved plays its win and moves on by itself (D49)
   await settledEqualsRules(page);
 });
 
-test('the free hint acts, then waits out its cooldown (D32); undo takes the hint back', async ({
+test('the hint: the first press shows why and places nothing, the second places; one hint, one cooldown (D74)', async ({
   page,
 }) => {
   await open(page, 'reset=1&house=12');
   expect((await state(page))?.hintReady).toBe(true);
   await press(page, 'hint');
-  const after = await waitState(page, (s) => s.moves === 1, 'the hint placed a ghost');
-  expect(after.hintReady).toBe(false);
-  expect(after.hintRemaining ?? 0).toBeGreaterThan(80);
-  const placed = (await settledEqualsRules(page)).ghosts;
-  expect(placed).toHaveLength(1);
+  const shown = await waitState(page, (s) => s.hints === 1, 'the reason shown');
+  expect(shown.moves).toBe(0);
+  expect(shown.hintReady).toBe(false);
+  expect(shown.hintRemaining ?? 0).toBeGreaterThan(80);
+  const reason = shown.hintReason;
+  if (reason?.kind !== 'place')
+    throw new Error(`no placement explained: ${JSON.stringify(reason)}`);
+  expect(reason.segments.length + reason.rooms.length).toBeGreaterThan(1);
+  expect((await settledEqualsRules(page)).ghosts).toEqual([]);
+  await press(page, 'hint'); // the second press: the explained ghost appears
+  const placed = await waitState(page, (s) => s.moves === 1, 'the hint placed a ghost');
+  expect(placed.hints).toBe(1);
+  expect(placed.hintReason).toBeNull();
+  expect((await settledEqualsRules(page)).ghosts.map(([c]) => c)).toEqual([reason.cell]);
   const h = await house(page);
-  expect(h.solution).toContain(placed[0]?.[0]);
-  await press(page, 'hint'); // still cooling down: nothing happens
+  expect(h.solution).toContain(reason.cell);
+  await press(page, 'hint'); // cooling down, nothing pending: nothing happens
+  await frames(page, 3);
   expect((await state(page))?.moves).toBe(1);
   await press(page, 'undo');
   expect((await settledEqualsRules(page)).ghosts).toEqual([]);
@@ -526,8 +421,10 @@ test('the buttons follow a new screen size: undo and hint answer to their edge a
   expect((await settledEqualsRules(page)).ghosts).toHaveLength(1);
   await press(page, 'undo', EDGE);
   expect((await settledEqualsRules(page)).ghosts).toEqual([]);
-  await press(page, 'hint', EDGE);
+  await press(page, 'hint', EDGE); // the reason (D74)
   await waitState(page, (s) => s.hints === 1, 'the hint');
+  await press(page, 'hint', EDGE); // the ghost
+  await waitState(page, (s) => s.moves === 3, 'the hint placed');
   expect((await settledEqualsRules(page)).ghosts).toHaveLength(1);
 });
 

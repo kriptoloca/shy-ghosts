@@ -24,6 +24,7 @@ export function view(s: PlayState): View {
 const PHASE: Record<PlayEvent['type'], number> = {
   placed: 0,
   relocated: 0,
+  moved: 0,
   removed: 0,
   nudged: 0,
   marked: 0,
@@ -43,7 +44,8 @@ const PHASE: Record<PlayEvent['type'], number> = {
  *   blocked cell, on another ghost or in a room that already holds one, and a given never leaves;
  * - a mark changes only as a stroke of its own (the whole list), or right after the move that
  *   causes it: off where a ghost lands, on again where an undone ghost leaves;
- * - a nudge is the whole list, and what nudges is furniture, a lamp or a given;
+ * - a nudge is the whole list, and what nudges is furniture, a lamp or a ghost (a given, or a
+ *   ghost carried where it may not go, which goes back, D72);
  * - every ghost that was placed or moved gets one state; any other ghost gets one only when its
  *   state really changed; `from` is what the screen shows; `by` and `lamps` agree with the state;
  * - after the list, no ghost lacks a state, no mark lies under a ghost, the lit rooms are exactly
@@ -115,6 +117,27 @@ export class Screen {
           this.expectUnmark(events, k, e.to, bad);
           break;
         }
+        case 'moved': {
+          // a ghost carried into another room that held none (D72)
+          if (h.roomOf[e.from] !== e.fromRoom || h.roomOf[e.to] !== e.toRoom) {
+            bad(
+              `moved ${String(e.from)}→${String(e.to)} across rooms ${String(e.fromRoom)}, ${String(e.toRoom)}`,
+            );
+          }
+          if (e.fromRoom === e.toRoom) bad('a move inside one room (a relocation)');
+          if (!this.ghosts.has(e.from)) bad(`moved from an empty cell ${String(e.from)}`);
+          if (isGiven(e.from)) bad(`a given was moved from ${String(e.from)}`);
+          if (this.ghosts.has(e.to) || h.blocked[e.to]) bad(`moved onto ${String(e.to)}`);
+          if (roomGhost(e.toRoom).length > 0)
+            bad(`moved into room ${String(e.toRoom)}, which has a ghost`);
+          const st = this.ghosts.get(e.from) ?? null;
+          this.ghosts.delete(e.from);
+          this.ghosts.set(e.to, st);
+          arrived.add(e.to);
+          glided.add(e.to);
+          this.expectUnmark(events, k, e.to, bad);
+          break;
+        }
         case 'removed':
           if (h.roomOf[e.cell] !== e.room)
             bad(`removed ${String(e.cell)} from room ${String(e.room)}`);
@@ -124,14 +147,18 @@ export class Screen {
           break;
         case 'nudged':
           if (events.length !== 1) bad('a nudge with other events');
-          if (!h.blocked[e.cell] && !(isGiven(e.cell) && this.ghosts.has(e.cell))) {
-            bad(`nudged ${String(e.cell)}, which is neither furniture, a lamp nor a given`);
+          // furniture, a lamp, a given, or a carried ghost sent back (D72)
+          if (!h.blocked[e.cell] && !this.ghosts.has(e.cell)) {
+            bad(`nudged ${String(e.cell)}, which is neither furniture, a lamp nor a ghost`);
           }
           break;
         case 'marked': {
           if (e.cells.length === 0) bad('an empty mark event');
           const afterMove =
-            prev?.type === 'placed' || prev?.type === 'relocated' || prev?.type === 'removed';
+            prev?.type === 'placed' ||
+            prev?.type === 'relocated' ||
+            prev?.type === 'moved' ||
+            prev?.type === 'removed';
           if (k === 0) {
             if (events.length !== 1) bad('a stroke with other events');
           } else if (!afterMove || e.cells.length !== 1) {
@@ -142,6 +169,8 @@ export class Screen {
               (prev.type === 'placed' && !e.on && c === prev.cell) ||
               (prev.type === 'relocated' && !e.on && c === prev.to) ||
               (prev.type === 'relocated' && e.on && c === prev.from) ||
+              (prev.type === 'moved' && !e.on && c === prev.to) ||
+              (prev.type === 'moved' && e.on && c === prev.from) ||
               (prev.type === 'removed' && e.on && c === prev.cell);
             if (!ok) bad(`mark ${String(c)} ${String(e.on)} after ${prev.type}`);
           }

@@ -1,4 +1,4 @@
-import { hintStep } from './hint';
+import { hintExplain, type HintExplain } from './hint';
 import type { HouseModel } from './house';
 
 /** A ghost's state (GDD §3). A ghost both seen and lit is shown as seen (D26). */
@@ -9,14 +9,16 @@ export type StrokeMode = 'paint' | 'erase';
 
 /**
  * What a move did, in the order the scene plays it back (GENERATOR.md §2, D41): the move's own
- * events first (`placed`, `relocated`, `removed`, `nudged`, `marked`); then a `status` for every
- * ghost on the board whose state changed, in reading order (always for the ghost that was placed
- * or moved; `from` is null for a new one; a removed ghost gets none); then `settled` and
- * `unsettled` by room id; `solved` last.
+ * events first (`placed`, `relocated`, `moved`, `removed`, `nudged`, `marked`); then a `status`
+ * for every ghost on the board whose state changed, in reading order (always for the ghost that
+ * was placed or moved; `from` is null for a new one; a removed ghost gets none); then `settled`
+ * and `unsettled` by room id; `solved` last.
  */
 export type PlayEvent =
   | { type: 'placed'; cell: number; room: number }
   | { type: 'relocated'; from: number; to: number; room: number }
+  /** A ghost dragged into another room that held none (D72). */
+  | { type: 'moved'; from: number; to: number; fromRoom: number; toRoom: number }
   | { type: 'removed'; cell: number; room: number }
   /** A tap on furniture, a lamp or a given, or on a given's room: `cell` is what nudges. */
   | { type: 'nudged'; cell: number }
@@ -45,6 +47,14 @@ export interface BoardSave {
 type Change =
   | { kind: 'place'; cell: number; room: number; unmarked: boolean }
   | { kind: 'relocate'; from: number; to: number; room: number; unmarked: boolean }
+  | {
+      kind: 'move';
+      from: number;
+      to: number;
+      fromRoom: number;
+      toRoom: number;
+      unmarked: boolean;
+    }
   | { kind: 'remove'; cell: number; room: number }
   | { kind: 'mark'; cells: readonly number[]; on: boolean };
 
@@ -194,6 +204,26 @@ export class PlayState {
   }
 
   /**
+   * A drag that carries the ghost on `from` (D72): dropped on an empty cell of its own room it
+   * relocates, on an empty cell of a room without a ghost it moves there (one move, one undo
+   * step); anywhere else (a room that holds a ghost, a block, a lamp, off the board: `to` −1) it
+   * goes back with a nudge, which is not a move. A resident only nudges; a drag from a cell
+   * without a ghost, or dropped where it started, does nothing.
+   */
+  drag(from: number, to: number): PlayEvent[] {
+    if (this.solved || !this.isCell(from)) return [];
+    const room = this.house.roomOf[from] as number;
+    if (this.ghost[room] !== from || to === from) return [];
+    const back: PlayEvent[] = [{ type: 'nudged', cell: from }];
+    if (this.given[room] || !this.isCell(to) || this.house.blocked[to]) return back;
+    const toRoom = this.house.roomOf[to] as number;
+    const unmarked = this.isMarked(to);
+    if (toRoom === room) return this.record({ kind: 'relocate', from, to, room, unmarked });
+    if (this.ghost[toRoom] !== null) return back;
+    return this.record({ kind: 'move', from, to, fromRoom: room, toRoom, unmarked });
+  }
+
+  /**
    * A drag over `cells` (GDD §3.1, D21): paint marks every empty, ghost-free, unmarked cell it
    * covers (lit cells included, the starting cell included); erase clears every marked one. One
    * move; a stroke that changes nothing is none.
@@ -220,10 +250,21 @@ export class PlayState {
     return this.resolve(() => this.revert(change));
   }
 
-  /** The hint (GDD §3.1, `hintStep`), applied as a move: undo takes it back like any other. */
+  /**
+   * The hint's first press (D74): what the next hint would do and why, without doing it (a wrong
+   * ghost to take away, or the next forced placement with the lines and rooms that force it).
+   */
+  explainHint(): HintExplain | null {
+    if (this.solved) return null;
+    return hintExplain(this.house, this.ghost);
+  }
+
+  /**
+   * The hint's second press (GDD §3.1, D74): does what `explainHint` showed, as a move; undo
+   * takes it back like any other.
+   */
   hint(): PlayEvent[] {
-    if (this.solved) return [];
-    const step = hintStep(this.house, this.ghost);
+    const step = this.explainHint();
     if (!step) return [];
     const room = this.house.roomOf[step.cell] as number;
     if (step.kind === 'remove') {
@@ -265,10 +306,13 @@ export class PlayState {
     this.status = this.computeStatus();
     this.settled = this.computeSettled();
     const occupied = new Set(this.ghostCells());
+    // a ghost that moved rooms is the same ghost: its old state is the one the screen shows
+    const came = new Map<number, number>();
+    for (const e of events) if (e.type === 'moved') came.set(e.to, e.from);
     const changed: { cell: number; from: GhostStatus | null; to: GhostStatus }[] = [];
     this.ghost.forEach((now, room) => {
       if (now === null) return;
-      const was = ghostBefore[room] ?? null;
+      const was = came.get(now) ?? ghostBefore[room] ?? null;
       const from = was === null ? null : (statusBefore[was] ?? null);
       const to = this.status[now] as GhostStatus;
       if (was !== now || from !== to) changed.push({ cell: now, from, to });
@@ -297,6 +341,13 @@ export class PlayState {
           { type: 'relocated', from: c.from, to: c.to, room: c.room },
           ...this.unmark(c.unmarked, c.to),
         ];
+      case 'move':
+        this.ghost[c.fromRoom] = null;
+        this.ghost[c.toRoom] = c.to;
+        return [
+          { type: 'moved', from: c.from, to: c.to, fromRoom: c.fromRoom, toRoom: c.toRoom },
+          ...this.unmark(c.unmarked, c.to),
+        ];
       case 'remove':
         this.ghost[c.room] = null;
         return [{ type: 'removed', cell: c.cell, room: c.room }];
@@ -318,6 +369,13 @@ export class PlayState {
         this.ghost[c.room] = c.from;
         return [
           { type: 'relocated', from: c.to, to: c.from, room: c.room },
+          ...this.remark(c.unmarked, c.to),
+        ];
+      case 'move':
+        this.ghost[c.toRoom] = null;
+        this.ghost[c.fromRoom] = c.from;
+        return [
+          { type: 'moved', from: c.to, to: c.from, fromRoom: c.toRoom, toRoom: c.fromRoom },
           ...this.remark(c.unmarked, c.to),
         ];
       case 'remove':

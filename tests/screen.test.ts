@@ -88,7 +88,7 @@ describe('the model screen is strict', () => {
     expect(flags(problems, 'a stroke with other events')).toBe(true);
   });
 
-  it('only furniture, a lamp or a given nudges', () => {
+  it('only furniture, a lamp or a ghost (a given, or a carried one going back) nudges', () => {
     // a tap on (1,1), an empty cell of the given's room: the given nudges, not the tapped cell
     const wrong = (): PlayEvent[] => [{ type: 'nudged', cell: 5 }];
     const problems = problemsOf(
@@ -96,7 +96,7 @@ describe('the model screen is strict', () => {
       wrong,
       (s) => s.tap(5),
     );
-    expect(flags(problems, 'nudged 5, which is neither furniture, a lamp nor a given')).toBe(true);
+    expect(flags(problems, 'nudged 5, which is neither furniture, a lamp nor a ghost')).toBe(true);
     expect(
       problemsOf(
         () => undefined,

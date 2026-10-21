@@ -5,6 +5,8 @@
  * live in the tests that check them (tests/gate-a.test.ts).
  */
 
+import type { Insight } from './grade';
+
 /** Grader techniques (GENERATOR.md §4.2). */
 export type Tech = 1 | 2 | 3 | 4;
 /** The techniques by name; the number is the order the grader tries them in (§4.3). */
@@ -52,6 +54,13 @@ export const EST_T4 = 25;
 export const EST_PER_EMPTY_CELL = 1.5;
 /** Every generated house asks for at least this many deduction episodes (A3, D16). */
 export const MIN_EPISODES = 1;
+/**
+ * From house 10, and in every daily, the forced chain stalls at least twice and each time only a
+ * real deduction (an insight other than `shape`) moves it on (Gate B tune round 1, D67).
+ */
+export const INSIGHT_EPISODES = 2;
+/** The bands that carry difficulty need insights of at least two kinds (D67). */
+export const INSIGHT_KINDS_HARD = 2;
 
 // ---- Players (§5) -------------------------------------------------------------------------------
 
@@ -70,18 +79,24 @@ export const SOLUTION_PICK_NODE_LIMIT = 4000;
 /** No room larger than this many times the average room (steps 4 and 5). */
 export const ROOM_MAX_FACTOR = 2.5;
 /** Border moves that break a second solution before the candidate is dropped (step 5). */
-export const UNIQUE_FIX_MOVES = 200;
+export const UNIQUE_FIX_MOVES = 50;
 /**
  * Step 5 looks for a cell to move among the first this many other solutions, not only the first:
  * the first one's cells are often all inside their rooms (D53).
  */
 export const UNIQUE_FIX_ALTERNATIVES = 16;
-/** Candidates tried per house before the build fails loudly (D15). */
-export const CANDIDATE_LIMIT = 2000;
+/**
+ * Candidates tried per house before the build fails loudly (D15). Raised from 2,000 for Gate B's
+ * insight and relevance rules (D67, D68): houses 9–11 and 15–16 need several thousand.
+ */
+export const CANDIDATE_LIMIT = 50_000;
 /** Houses 4, 9 and 17 keep the lowest d among this many qualifying candidates (D15, D20). */
 export const TEACH_POOL = 50;
 
 // ---- The list (§7, §8, D6, D7, D14) -------------------------------------------------------------
+
+/** No house is larger than 8 × 8, so cells stay ≥ 44 CSS px on a 360 px wide phone (D69). */
+export const SIDE_MAX = 8;
 
 /** Houses in levels.json; the hand-made tutorial ones are 1–3. */
 export const LEVEL_COUNT = 1000;
@@ -164,6 +179,21 @@ export interface Band {
    * grade is the same in all four quarter turns, so the turned house keeps its grade (A8; D54).
    */
   turnable: boolean;
+  /** Insight episodes the house needs (D67): stalls only a real deduction ends. */
+  insightEpisodes: number;
+  /** Kinds of insight it needs (two where the band carries difficulty, D67). */
+  insightKinds: number;
+  /** The kind it teaches and must use (houses 5, 6, 10 and 17), or null. */
+  needInsight: Insight | null;
+  /** House 4, the first deduction: only `shape` steps (a room that lies in one line). */
+  shapeOnly: boolean;
+  /** A teach house whose trick must differ from the house before it (D67). */
+  newTrick: boolean;
+  /**
+   * Residents that demonstrate the house's element (D70): house 9, two of the solution's ghosts
+   * in one line with a block between them; house 17, one beside the lamp's beam.
+   */
+  residents: 'block-pair' | 'beam-side' | null;
 }
 
 const base = {
@@ -175,7 +205,26 @@ const base = {
   lowestOf: null,
   cycle: null,
   turnable: false,
+  insightEpisodes: INSIGHT_EPISODES,
+  insightKinds: 1,
+  needInsight: null,
+  shapeOnly: false,
+  newTrick: false,
+  residents: null,
 } as const;
+
+/**
+ * Houses 4–8 teach one trick each (D67): 4 the first deduction (a room in one line), 5 a line a
+ * ghost's sight makes, 6 a cross, 7 both in two stalls, 8 two stalls with a trick other than 7's.
+ * Houses 6–8 take d up to 14 (was 12): two stalls rarely fit below.
+ */
+const EARLY_TEACH: Record<number, Partial<Band>> = {
+  4: { insightEpisodes: 0, insightKinds: 0, shapeOnly: true },
+  5: { insightEpisodes: 1, needInsight: 'line', newTrick: true },
+  6: { insightEpisodes: 1, needInsight: 'cross', newTrick: true, d: [4, 14] },
+  7: { insightEpisodes: 2, insightKinds: 2, newTrick: true, d: [4, 14] },
+  8: { insightEpisodes: 2, newTrick: true, d: [4, 14] },
+};
 
 /** The naive cap on hard houses, cycle positions 1–9 and dailies; manors have their own (D16). */
 export const NAIVE_MAX = 0.35;
@@ -211,21 +260,29 @@ export function bandFor(id: number): Band {
       d: [4, 12],
       teach: first ? 'first-t2' : null,
       lowestOf: first ? TEACH_POOL : null,
+      ...EARLY_TEACH[id],
     };
   }
   if (id <= 11) {
     const first = id === 9;
+    // 9 teaches the block on 5 × 5 with one stall; 10 and 11 need two stalls, which 5 × 5 with
+    // blocks that matter almost never gives (0 of 834 candidates), so they move to 6 × 6 (D67)
     return {
       ...base,
       role: 'teach',
-      sides: [5],
-      rooms: first ? [6, 6] : [5, 6],
-      furniture: [1, 2],
+      sides: first ? [5] : [6],
+      rooms: first ? [6, 6] : [6, 7],
+      furniture: first ? [1, 2] : [1, 3],
       lamps: [0, 0],
       maxTech: 2,
-      d: [6, 14],
+      d: first ? [6, 14] : [6, 16],
       teach: first ? 'furniture-between' : null,
       lowestOf: first ? TEACH_POOL : null,
+      insightEpisodes: first ? 1 : INSIGHT_EPISODES,
+      // 10 differs from 9 by kind, not only by depth: it needs a cross
+      needInsight: id === 10 ? 'cross' : null,
+      newTrick: true,
+      residents: first ? 'block-pair' : null,
     };
   }
   if (id <= 14) {
@@ -240,6 +297,7 @@ export function bandFor(id: number): Band {
       needT3: true,
       d: [14, 24],
       naiveMax: NAIVE_MAX,
+      insightKinds: INSIGHT_KINDS_HARD,
     };
   }
   if (id <= 16) {
@@ -267,6 +325,10 @@ export function bandFor(id: number): Band {
       d: [8, 16],
       teach: first ? 'light-needed' : null,
       lowestOf: first ? TEACH_POOL : null,
+      // 17 teaches light with a lamp-made line; 18 and 19 each bring a trick of their own
+      needInsight: first ? 'lamp' : null,
+      newTrick: !first,
+      residents: first ? 'beam-side' : null,
     };
   }
   if (id <= 22) {
@@ -281,6 +343,7 @@ export function bandFor(id: number): Band {
       needT3: true,
       d: [18, 30],
       naiveMax: NAIVE_MAX,
+      insightKinds: INSIGHT_KINDS_HARD,
     };
   }
   if (id < CYCLE_START) {
@@ -308,6 +371,7 @@ export function bandFor(id: number): Band {
       maxTech: 3,
       d: [rise(12, 6, c), rise(22, 8, c)],
       naiveMax: NAIVE_MAX,
+      insightKinds: INSIGHT_KINDS_HARD,
     };
   }
   if (p <= CYCLE_HIGH_LAST) {
@@ -322,6 +386,7 @@ export function bandFor(id: number): Band {
       needT3: true,
       d: [rise(18, 8, c), rise(32, 10, c)],
       naiveMax: NAIVE_MAX,
+      insightKinds: INSIGHT_KINDS_HARD,
     };
   }
   if (p === CYCLE_MANOR) {
@@ -329,13 +394,16 @@ export function bandFor(id: number): Band {
       ...base,
       ...late,
       role: 'manor',
-      sides: [9],
+      // 8 × 8 since D69 (was 9 × 9): readable on a 360 px wide phone, more blocks for the area
+      sides: [SIDE_MAX],
       rooms: [9, 12],
+      furniture: [1, 6],
       maxTech: 4,
       needT3: true,
       maxT4: 1,
       d: [rise(33, 10, c), rise(50, 15, c)],
       naiveMax: NAIVE_MAX_MANOR,
+      insightKinds: INSIGHT_KINDS_HARD,
     };
   }
   return {
@@ -361,4 +429,5 @@ export const DAILY_BAND: Band = {
   maxTech: 3,
   d: [20, 34],
   naiveMax: NAIVE_MAX,
+  insightKinds: INSIGHT_KINDS_HARD,
 };

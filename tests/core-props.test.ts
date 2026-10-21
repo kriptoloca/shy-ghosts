@@ -17,6 +17,8 @@ const PROPS_TIMEOUT_MS = 120_000;
 type Move =
   | { kind: 'tap'; cell: number }
   | { kind: 'stroke'; cells: number[] }
+  /** A ghost carried (D72): `pick` chooses among the ghosts on the board when it is played. */
+  | { kind: 'drag'; pick: number; to: number }
   | { kind: 'undo' }
   | { kind: 'hint' };
 
@@ -31,7 +33,8 @@ function randomMoves(rng: Rng, h: HouseModel): Move[] {
         cells: Array.from({ length: rng.int(1, 6) }, () => rng.int(0, h.size - 1)),
       };
     }
-    if (x < 0.9) return { kind: 'undo' };
+    if (x < 0.85) return { kind: 'undo' };
+    if (x < 0.93) return { kind: 'drag', pick: rng.next(), to: rng.int(-1, h.size - 1) };
     return { kind: 'hint' };
   });
 }
@@ -42,6 +45,10 @@ function apply(s: PlayState, m: Move): PlayEvent[] {
       return s.tap(m.cell);
     case 'stroke':
       return s.stroke(m.cells, s.strokeModeAt(m.cells[0] as number));
+    case 'drag': {
+      const ghosts = s.ghostCells();
+      return s.drag(ghosts[Math.floor(m.pick * ghosts.length)] ?? 0, m.to);
+    }
     case 'undo':
       return s.undo();
     case 'hint':
@@ -59,7 +66,7 @@ function* cases(seed: number): Generator<{ d: HouseData; h: HouseModel; moves: M
   }
 }
 
-const MOVE_EVENTS = new Set(['placed', 'relocated', 'removed', 'nudged', 'marked']);
+const MOVE_EVENTS = new Set(['placed', 'relocated', 'moved', 'removed', 'nudged', 'marked']);
 
 /** Move events first, then states in reading order, then rooms by id, then `solved` last. */
 function orderProblems(ev: readonly PlayEvent[]): string[] {

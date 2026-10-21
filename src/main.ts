@@ -28,7 +28,9 @@ const rendererParam = import.meta.env.DEV
   : null;
 
 // Dev builds: ?fpsmin=N lowers Phaser's minimum fps (default 5), i.e. raises the per-frame delta
-// cap, so timers keep wall-clock time on a GPU-less machine.
+// cap, and turns off the start-up cool-down (`panicMax`, 120 frames after the boot or a focus in
+// which every frame counts at most 1/60 s), so timers keep wall-clock time on a GPU-less machine
+// whose frames take longer than 1/60 s (Gate B round 1: a 2 s finale ran 6.5 s headless).
 const fpsMin = import.meta.env.DEV
   ? Number(new URLSearchParams(window.location.search).get('fpsmin'))
   : NaN;
@@ -45,7 +47,7 @@ const game = new Phaser.Game({
     height: current.height,
   },
   render: { antialias: true, pixelArt: false, roundPixels: false },
-  fps: Number.isFinite(fpsMin) && fpsMin >= 1 ? { min: fpsMin } : undefined,
+  fps: Number.isFinite(fpsMin) && fpsMin >= 1 ? { min: fpsMin, panicMax: 0 } : undefined,
   scene: [BootScene, GameScene],
 });
 

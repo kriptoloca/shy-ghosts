@@ -2,8 +2,8 @@ import { HINT_COOLDOWN_S, MS_PER_S } from '../config';
 import type { PlayEvent, PlayState } from '../core/state';
 import type { HouseInProgress } from '../platform/storage';
 
-/** The move a player asked for (the session counts hints apart). */
-export type MoveKind = 'tap' | 'stroke' | 'undo' | 'hint';
+/** The move a player asked for: a drag paints (`stroke`) or carries a ghost (`drag`, D72). */
+export type MoveKind = 'tap' | 'stroke' | 'drag' | 'undo' | 'hint';
 
 /**
  * One house in progress (GDD §3.2, §9, §14): the solve time from the first input in this house
@@ -43,15 +43,23 @@ export class HouseSession {
     this.begun = true;
   }
 
-  /** A move's events: a move unless nothing changed or only something nudged. */
-  record(events: readonly PlayEvent[], kind: MoveKind): void {
+  /**
+   * A move's events: a move unless nothing changed or only something nudged. A hint's move (its
+   * second press) is a move, but the hint was counted at its first press (`hinted`, D74).
+   */
+  record(events: readonly PlayEvent[]): void {
     if (events.length === 0 || events.every((e) => e.type === 'nudged')) return;
     this.begun = true;
     this.moves++;
-    if (kind === 'hint') this.hints++;
     if (events.some((e) => e.type === 'status' && e.to === 'seen' && e.from !== 'seen')) {
       this.conflicts++;
     }
+  }
+
+  /** The hint's first press showed its reason: one hint, whatever completes it (D74). */
+  hinted(): void {
+    this.begun = true;
+    this.hints++;
   }
 
   /** Play time passed (the scene does not tick while the platform pause holds). */

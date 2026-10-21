@@ -1,3 +1,4 @@
+import type { HintExplain } from '../core/hint';
 import type { PlayEvent } from '../core/state';
 import type { DrawnState } from '../game/board';
 import type { ViewState } from '../game/view';
@@ -19,8 +20,27 @@ export interface GhostDebugState {
   paused: boolean;
   /** The scene takes pointer input now (no platform pause, no resume grace). */
   input: boolean;
-  /** Game: playing, the win beat, or the next house sliding in. */
-  phase?: 'play' | 'win' | 'slide';
+  /** Game: a teaching demonstration (D70), playing, the win beat, or the next house sliding in. */
+  phase?: 'demo' | 'play' | 'win' | 'slide';
+  /** Game: ms on the scene clock since the house was solved, during its finale; else null (D73). */
+  beatMs?: number | null;
+  /**
+   * The last finale (D73): its beat on the scene's clock, from the solve to the slide (a tap may
+   * cut it short), and the whole of it on the wall clock, from the solve to the next house, in ms.
+   */
+  finale?: { beatMs: number; wallMs: number } | null;
+  /** Teaching demonstrations started since the Game began (D70; none on a resume). */
+  demos?: number;
+  /** The house on screen: when it appeared, and when its input opened (performance.now(), ms). */
+  shownAt?: number | null;
+  playAt?: number | null;
+  /** A tap ended this house's demonstration early. */
+  demoSkipped?: boolean;
+  /**
+   * The hint's first press showed this reason and waits for the second (D74); null when no hint is
+   * pending. Under `?playtest=1` a placement's cell is left out (it is on the solution).
+   */
+  hintReason?: DebugHintReason | null;
   /** Game: every motion has finished, so what is drawn is final. */
   idle?: boolean;
   solved?: boolean;
@@ -51,6 +71,11 @@ export interface GhostDebugState {
   /** On the board on screen: effect drawings created, effects played (pooled: made < used). */
   effects?: { made: number; used: number };
 }
+
+/** A pending hint's reason as the hooks show it (no cell for a placement under `?playtest=1`). */
+export type DebugHintReason =
+  | Extract<HintExplain, { kind: 'remove' }>
+  | (Omit<Extract<HintExplain, { kind: 'place' }>, 'cell'> & { cell?: number });
 
 /** A house's board when it opened and every event list the scene played since. */
 export interface DebugRecord {

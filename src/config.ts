@@ -58,6 +58,11 @@ export const COLOR_BOOT_BAR_FILL = 0x6f86a8;
 /** Space between the canvas edge, the bands, the HUD column and the board. */
 export const LAYOUT_MARGIN = 32;
 /**
+ * Portrait only: the board's margin to the left and right canvas edge (D69, was 32). A 1,056 px
+ * board gives 8 × 8 cells of 132 design px: 44 CSS px on a 360 × 640 phone, 66 at 540 × 960.
+ */
+export const PORTRAIT_SIDE_MARGIN = 12;
+/**
  * A design size this much taller than wide is portrait, this much wider than tall landscape;
  * in between (1:1 and near it) the square arrangement: thinner bands around a smaller board.
  */
@@ -76,12 +81,39 @@ export const BUTTON_GAP = 72;
 /** Cells are at least this many design px at 9 × 9 in every arrangement (GDD §12). */
 export const CELL_MIN = 80;
 /**
- * Walls between rooms: this share of a cell, within [WALL_MIN, WALL_MAX] px; the grid inside a
- * room is GRID_LINE px, always thinner than a wall.
+ * Progress dots (D75): one per room, in the top band (a row) or the HUD column (rows of
+ * DOT_COLUMNS), radius up to DOT_R_MAX (10 CSS px on a 360 px wide phone, after the design
+ * critique; was 22) and never under DOT_R_MIN, DOT_GAP apart.
+ */
+export const DOT_R_MAX = 30;
+export const DOT_R_MIN = 10;
+export const DOT_GAP = 14;
+export const DOT_COLUMNS = 3;
+/** A filled dot's dark ring, as a share of its radius, and its pop. */
+export const DOT_RING = 0.28;
+export const DOT_POP_SCALE = 1.35;
+/**
+ * An empty dot shows its swatch faint; every dot has a thin light rim (DOT_RIM design px, ≥ 3:1
+ * against the page), so the rooms can be counted whether their dots are full or not.
+ */
+export const DOT_EMPTY_ALPHA = 0.4;
+export const DOT_RIM = 4;
+export const COLOR_DOT_RIM = 0x6c7590;
+/**
+ * A dot's wallpaper marks, as shares of its radius: the width of a stripe, the size of a dot or a
+ * check, and how far from the middle they sit (so every mark stays inside the dot).
+ */
+export const DOT_PATTERN_LINE = 0.14;
+export const DOT_PATTERN_MARK = 0.16;
+export const DOT_PATTERN_OFFSET = 0.45;
+/**
+ * Walls between rooms and around the house: this share of a cell, within [WALL_MIN, WALL_MAX]
+ * design px (≥ 4 CSS px on a 360 px wide phone, D71); the grid inside a room is GRID_LINE px, a
+ * third of the thinnest wall at most.
  */
 export const WALL_SHARE = 0.09;
-export const WALL_MIN = 7;
-export const WALL_MAX = 14;
+export const WALL_MIN = 12;
+export const WALL_MAX = 18;
 export const GRID_LINE = 2;
 
 // ---- Input and session (GDD §3.1) -------------------------------------------------------------
@@ -90,59 +122,129 @@ export const GRID_LINE = 2;
 export const DRAG_PX = 24;
 /** The graybox hint is free with this cooldown, in seconds of unpaused play (D32). */
 export const HINT_COOLDOWN_S = 90;
+/**
+ * The hint's first press shows its reason this long (D74): the target room pulses once every
+ * HINT_PULSE_MS (slower than 3 a second, D23); a wrong ghost trembles HINT_TREMBLE_SWINGS swings.
+ */
+export const HINT_REASON_MS = 2000;
+export const HINT_PULSE_MS = 500;
+export const HINT_TREMBLE_SWINGS = 4;
 /** The house in progress is written this long after the last change (debounced, GDD §9). */
 export const SAVE_DEBOUNCE_MS = 400;
 /** Milliseconds in a second (the scene ticks in ms, the save keeps seconds). */
 export const MS_PER_S = 1000;
+/** Seconds in a minute (the solve time shows as m:ss). */
+export const S_PER_MIN = 60;
 
-// ---- Graybox look (Epic 3; the art arrives in Epic 4) -----------------------------------------
+// ---- Graybox look (Epic 3; Gate B tune round 1, D71; the art arrives in Epic 4) ---------------
 
 /**
- * Room floors: four lightness steps of one slate hue. Rooms differ by pattern and lightness, never
- * by hue alone (CLAUDE.md, Rendering), so the house reads as a floor plan, not a coloured grid.
+ * Room floors (D71): a light, muted "old wallpaper" house at night (the page around it stays
+ * dark). By lightness level (L* 89, 79, 69, 59), then hue family (dusty rose, sand, slate: the
+ * triple that stays apart best for a deuteranope); chroma ≤ 20, so it reads as a lived-in house,
+ * never as a nursery or a coloured grid. Every room of a house gets a floor of its own, and
+ * neighbouring rooms differ by a level (src/game/look.ts); tests/contrast.test.ts holds the floors
+ * F1–F7 for every value here.
  */
-export const COLOR_ROOM_TONES: readonly number[] = [0x262c3d, 0x343c53, 0x434c68, 0x535d7c];
-/** Wallpaper lines and dots: each floor tone moved 16 % of the way toward white. */
-export const COLOR_ROOM_PATTERNS: readonly number[] = [0x494e5c, 0x555b6e, 0x616980, 0x6e7791];
-/** Wallpaper geometry, as shares of a cell: stripe and dot spacing, line width, dot radius. */
+export const COLOR_FLOORS: readonly (readonly number[])[] = [
+  [0xf1d9e3, 0xefdccf, 0xc9e4ed],
+  [0xdcbbc8, 0xd8bfac, 0xa4cad5],
+  [0xc49eae, 0xc0a38d, 0x81b0be],
+  [0xac8394, 0xa78870, 0x6196a5],
+];
+/** Each floor's wallpaper ink, in the same order: its L* 13 lower, a touch more chroma. */
+export const COLOR_FLOOR_INKS: readonly (readonly number[])[] = [
+  [0xd3b3c0, 0xd0b7a5, 0x9cc1ce],
+  [0xbe95a6, 0xb99b83, 0x76a8b6],
+  [0xa6798d, 0xa18066, 0x528fa0],
+  [0x8f5f74, 0x88664a, 0x2e7688],
+];
+/** The thin grid inside a room: the wall colour, faint, so it never reads as a wall. */
+export const GRID_ALPHA = 0.18;
+/** A settled room: a dashed teal ring inside its walls and a faint teal wash over its floor. */
+export const COLOR_SETTLED_RING = 0x004c45;
+export const COLOR_SETTLED_WASH = 0x7cd6ca;
+export const SETTLED_WASH_ALPHA = 0.15;
+/**
+ * Lit cells: thin amber stripes outlined in brown over the unchanged wallpaper (the light cue, a
+ * geometry of its own next to the settled ring). The stripes cover HATCH_SHARE of a lit cell's
+ * area and their outline HATCH_EDGE_SHARE (≤ 12 % in all), so a lit cell keeps its room's colour.
+ */
+export const COLOR_HATCH = 0xffca46;
+export const COLOR_HATCH_EDGE = 0x5a2b0e;
+export const HATCH_SHARE = 0.08;
+export const HATCH_EDGE_SHARE = 0.03;
+/** Outlines on the floors: the bookshelf in the wall colour, the lamp in the hatch's brown. */
+export const COLOR_FURNITURE_EDGE = 0x1c2025;
+export const COLOR_LAMP_EDGE = 0x5a2b0e;
+
+/**
+ * Wallpaper geometry, as shares of a cell: the motif spacing, a stripe's width, half a small
+ * diamond's diagonal (about the area of a dot of radius 0.05; diamonds, not polka dots, after the
+ * design critique: dots on the palest rose read as a nursery) and a check's side.
+ */
 export const PATTERN_STEP = 0.25;
 export const PATTERN_LINE = 0.035;
-export const PATTERN_DOT = 0.05;
-export const COLOR_GRID = 0x1b2030;
-export const COLOR_WALL = 0x07090f;
-/** Furniture: a dark block inset in its cell, with a lighter rim so it never reads as a wall. */
-export const COLOR_FURNITURE = 0x14171f;
-export const COLOR_FURNITURE_RIM = 0x6a7189;
-export const FURNITURE_INSET = 0.12;
-export const FURNITURE_RIM = 0.05;
-export const FURNITURE_CORNER = 0.12;
-/** A lamp: a warm disc with rays on a dark cell. */
-export const COLOR_LAMP = 0xf6c665;
-export const COLOR_LAMP_BASE = 0x14171f;
+export const PATTERN_DIAMOND = 0.065;
+export const PATTERN_CHECK = 0.08;
+/** Walls: dark ink, ≥ 4.5:1 against every floor in every state (F1). */
+export const COLOR_WALL = 0x1c2025;
+/**
+ * The settled ring's line: its width, its inset from the wall's inner edge (so it never reads as a
+ * wall), and its dashes, in design px.
+ */
+export const RING_WIDTH = 4;
+export const RING_INSET = 4;
+export const RING_DASH = 14;
+export const RING_GAP = 9;
+/**
+ * Furniture is a bookshelf (D71): an upright case in shares of its cell, SHELF_ROWS compartments of
+ * book spines (widths and heights in turn), so it reads as furniture, never as a box or a hole.
+ */
+export const SHELF = {
+  left: 0.2,
+  right: 0.8,
+  top: 0.08,
+  bottom: 0.94,
+  edge: 0.05,
+  side: 0.05,
+  gap: 0.015,
+  rows: 3,
+  bookWidths: [0.09, 0.07, 0.1, 0.08, 0.06],
+  bookHeights: [0.8, 0.68, 0.74, 0.62, 0.78],
+} as const;
+export const COLOR_SHELF = 0x7a5236;
+export const COLOR_BOOKS: readonly number[] = [0x9c3d33, 0x2f4f6b, 0xc79a3a, 0x55663a];
+/** A lamp: an amber disc with a brown outline and rays, the colours of the light it casts. */
 export const LAMP_DISC = 0.17;
+export const LAMP_EDGE = 0.04;
 export const LAMP_RAY_IN = 0.24;
 export const LAMP_RAY_OUT = 0.38;
 export const LAMP_RAY_WIDTH = 0.05;
 export const LAMP_RAYS = 8;
-/** Lit cells: a warm wash (a fill, not a tint). */
-export const COLOR_LIT = 0xf7c35a;
-export const LIT_ALPHA = 0.36;
-/** A settled room glows teal; the solved house gets a warm frame. */
-export const COLOR_GLOW = 0x4fd3c1;
-export const GLOW_ALPHA = 0.45;
+/** The solved house gets a warm frame; its rooms flash in turn at this opacity. */
 export const COLOR_SOLVED_FRAME = 0xffe3a0;
-/** Marks: a small grey dot, far smaller than a ghost and without a face. */
-export const COLOR_MARK = 0xb3bbcf;
+export const WIN_FLASH_ALPHA = 0.45;
+/** Marks: a small dark dot, far smaller than a ghost and without a face (F4). */
+export const COLOR_MARK = 0x2e353d;
 export const MARK_SHARE = 0.1;
-/** The dotted sight line between two ghosts that see each other. */
-export const COLOR_SEEN_LINE = 0xe2e8ff;
-export const SEEN_LINE_ALPHA = 0.55;
+/** The dotted sight line between two ghosts that see each other: dark indigo ink (F6). */
+export const COLOR_SEEN_LINE = 0x33306b;
+export const SEEN_LINE_ALPHA = 1;
 export const SEEN_LINE_FLASH_ALPHA = 1;
 export const SEEN_DOT = 0.045;
 export const SEEN_DOT_STEP = 0.2;
-/** The glance of a calm ghost: faint dots along its row and column, up to the first blocker. */
-export const COLOR_GLANCE = 0xffffff;
-export const GLANCE_ALPHA = 0.5;
+/** The glance of a calm ghost: dots along its row and column, up to the first blocker (F6). */
+export const COLOR_GLANCE = 0x2e353d;
+export const GLANCE_ALPHA = 1;
+/**
+ * The hint's reason (D74): every cell outside the lines and rooms that force the next ghost goes
+ * dim under a veil of the page colour, so those stay bright; the target room pulses light; a wrong
+ * ghost gets a dashed outline in the marks' ink (F6).
+ */
+export const HINT_VEIL_ALPHA = 0.45;
+export const COLOR_HINT_PULSE = 0xffffff;
+export const HINT_PULSE_ALPHA = 0.4;
 
 /** Ghosts: their size as a share of a cell, and the texture they are drawn into. */
 export const GHOST_SHARE = 0.86;
@@ -245,12 +347,13 @@ export const GLIDE_MS = 220;
 /** Remove: float up and fade. */
 export const REMOVE_MS = 180;
 export const REMOVE_RISE = 20;
-/** Seen: shiver ±SHIVER_PX in SHIVER_SWINGS swings; again every SHIVER_AGAIN_MS at ±SHIVER_AGAIN_PX. */
-export const SHIVER_PX = 4;
-export const SHIVER_SWING_MS = 40;
-export const SHIVER_SWINGS = 3;
-export const SHIVER_AGAIN_MS = 1500;
-export const SHIVER_AGAIN_PX = 2;
+/**
+ * Seen: shiver ±SHIVER_PX in SHIVER_SWINGS swings, 60 ms in all, and never again (D73): the pose
+ * and the dotted line carry the state while the conflict lasts.
+ */
+export const SHIVER_PX = 3;
+export const SHIVER_SWING_MS = 30;
+export const SHIVER_SWINGS = 2;
 /** The sight line between the two ghosts flashes twice: on, off, on (D23, under 3 a second). */
 export const SEEN_LINE_ON_MS = 100;
 export const SEEN_LINE_OFF_MS = 240;
@@ -259,20 +362,81 @@ export const LIT_FLASH_MS = 200;
 export const LIT_FLASH_ALPHA = 0.55;
 /** Calm: the glance rays show and fade (GDD §3a: 250 ms; audit 2026-10-21, DÜŞÜK 10). */
 export const GLANCE_MS = 250;
-/** A room settles (glows) or cools. */
+/** A room settles (its ring and wash come in) or cools (they fade). */
 export const GLOW_IN_MS = 250;
 export const GLOW_OUT_MS = 200;
+/**
+ * A room settles (D73): its ghost bobs, up to SETTLE_SCALE and SETTLE_HOP_PX up and back in
+ * SETTLE_MS, farther and longer than any failure motion; its progress dot pops in DOT_POP_MS.
+ */
+export const SETTLE_SCALE = 1.15;
+export const SETTLE_HOP_PX = 8;
+export const SETTLE_MS = 160;
+export const DOT_POP_MS = 120;
 /** A mark pops in or shrinks away. */
 export const MARK_MS = 60;
 /** A tap on furniture, a lamp or a resident: a small nudge. */
 export const NUDGE_PX = 2;
 export const NUDGE_MS = 80;
-/** The win beat: rooms flash in room-id order every min(STEP_MAX, SWEEP / rooms) ms, the ghosts hop. */
+/** A carried ghost is lifted (D72): drawn this much larger while it follows the pointer. */
+export const CARRY_SCALE = 1.1;
+/**
+ * The finale of a solved house (GDD §3a, D73), about 2 s: a hit stop, the rooms flashing in room-id
+ * order every min(STEP_MAX, SWEEP / rooms) ms, every ghost hopping and turning to the camera, then
+ * waving twice, the solve-time digits ticking in; the next house slides in at WIN_BEAT_MS. A tap
+ * skips it from WIN_SKIP_FROM_MS on: earlier taps are ignored, so the last placement's tap never
+ * skips the payoff.
+ */
+export const WIN_HIT_STOP_MS = 50;
 export const WIN_STEP_MAX_MS = 90;
 export const WIN_SWEEP_MS = 700;
 export const WIN_FLASH_MS = 160;
 export const WIN_HOP_PX = 14;
 export const WIN_HOP_MS = 180;
-export const WIN_BEAT_MS = 1000;
+/** The turn to the camera: the sheet narrows to this share and back during the hop. */
+export const WIN_TURN_SCALE = 0.8;
+export const WIN_WAVES = 2;
+export const WIN_WAVE_MS = 200;
+/** A wave tips the ghost this many degrees each way. */
+export const WIN_WAVE_DEG = 12;
+export const WIN_DIGITS_MS = 300;
+export const WIN_BEAT_MS = 1650;
+export const WIN_SKIP_FROM_MS = 600;
+/**
+ * The solve-time digits (m:ss), where the progress dots were (they give way as the digits tick
+ * in): their size in design px, font and colour, on the dark page.
+ */
+export const WIN_DIGITS_SIZE = 72;
+export const WIN_DIGITS_FONT = 'sans-serif';
+export const COLOR_WIN_DIGITS = '#ffe3a0';
 /** The next house slides in. */
 export const SLIDE_MS = 350;
+
+// ---- Teaching demonstrations (docs/gate-b-round1.md §3, D70) -----------------------------------
+
+/** The first house of sight, of rows and columns, of blocks and of lamps: each shows its rule. */
+export const DEMO_SIGHT_HOUSE = 1;
+export const DEMO_LINES_HOUSE = 2;
+export const DEMO_BLOCK_HOUSE = 9;
+export const DEMO_LAMP_HOUSE = 17;
+/**
+ * The resident blinks awake; dotted trails run along its row and column (shorter in house 2);
+ * house 17's lamp sweeps its light out, then a see-through copy of the resident steps into it.
+ * Input stays closed for the whole demonstration, never longer than DEMO_MAX_MS; a tap skips it.
+ */
+export const DEMO_BLINK_MS = 200;
+export const DEMO_TRAIL_MS = 900;
+export const DEMO_TRAIL_SHORT_MS = 600;
+export const DEMO_BEAM_MS = 500;
+export const DEMO_COPY_MS = 700;
+export const DEMO_MAX_MS = 1500;
+/** The see-through copy's opacity. */
+export const DEMO_COPY_ALPHA = 0.55;
+/** A trail runs out in this share of its time, then fades; the copy steps in and back in this share. */
+export const DEMO_RUN_SHARE = 0.6;
+export const DEMO_STEP_SHARE = 0.35;
+/** The blink squashes the resident to this height; a bump or a lamp switching on pops this much. */
+export const DEMO_BLINK_SCALE = 0.7;
+export const DEMO_BUMP_SCALE = 1.12;
+/** The light and the copy fade out over the demonstration's last DEMO_FADE_MS. */
+export const DEMO_FADE_MS = 200;

@@ -141,8 +141,9 @@ to what the graybox needs (D2).
   seen state at once; relocation, removal, marks (paint, erase) and undo; a reload resumes the
   house in progress (ghosts, marks, seconds); after rapid taps the settled screen equals the rules;
   9:16, 1:1 and 16:9 lay out without overlap and with cells ≥ 80 design px at 9 × 9 (layout unit
-  tests over every design size); a platform pause freezes everything and the waking tap is
-  ignored; no external requests; `solution()` is null under `?playtest=1`.
+  tests over every design size; since D69: no house above 8 × 8, cells ≥ 80 design px in every
+  arrangement and ≥ 44 CSS px at 360 × 640); a platform pause freezes everything and the waking
+  tap is ignored; no external requests; `solution()` is null under `?playtest=1`.
 - **AC — Gate B** (the playtester's verdict; thresholds fixed):
   - Protocol. The playtester (read-only, independent of the coder; its scripts and screenshots in
     its own scratch directory) gets the dev URL `/?reset=1&playtest=1&renderer=canvas&fpsmin=1`, the
@@ -198,8 +199,42 @@ to what the graybox needs (D2).
         `npm run build`, `npm run e2e` green
   - [x] `code-review` and the adversarial audit; the findings fixed red-first (D63–D66):
         `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
-  - [ ] `feat(epic-3)` (the main session)
-  - [ ] Gate B (the playtester), B1–B7: round 1 not passed; tune round 1 of 2 next
+  - [x] `feat(epic-3)` (the main session, `4e40bd2`)
+  - [ ] Gate B (the playtester), B1–B7: round 1 not passed; tune round 1 of 2 built (below);
+        round 2 next
+
+- **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
+  thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
+  - [x] 1 insight names in the grader's one pass; `insights`, `insightEpisodes` in the meta
+        (`grade.ts`, `record.ts`; `tests/grade.test.ts`)
+  - [x] 2 object relevance, the literal test and rule isolation (`relevance.ts`;
+        `tests/relevance.test.ts`)
+  - [x] 3 house rules (insights, tricks, residents in 9 and 17, 6 × 6 for 10–11, 8 × 8 manors,
+        `CANDIDATE_LIMIT`, the insight-aware turn test), rebuild (`params.ts`, `build-levels.ts`;
+        `tests/round1.test.ts`, Gate A unchanged)
+  - [x] 4 portrait side margin 12; cells ≥ 44 CSS px at 360 × 640, ≥ 66 at 540 × 960
+        (`layout.ts`; `tests/layout.test.ts`)
+  - [x] 5 palette and room styles, F1–F7 (`config.ts`, `look.ts`; `tests/contrast.test.ts`,
+        `tests/look.test.ts`)
+  - [x] 6 walls, bookshelf, lamp outline, light hatch, settled ring and wash, dark marks and lines
+        (`board.ts`, `graybox.ts`; source rules; e2e wall pixels at 360 × 640 in 1, 17, 34)
+  - [x] 7 feedback and timing: settle bob, 60 ms shiver, the 2 s finale and its skip from 600 ms
+        (`tests/motion.test.ts` against GDD §3a; e2e)
+  - [x] 8 teaching demonstrations in 1, 2, 9, 17 (`demo.ts`, `demo-play.ts`; `tests/demo.test.ts`;
+        e2e: input opens ≤ 1.6 s, a tap skips without placing, no replay on a resume)
+  - [x] 9 drag moves a ghost (`gesture.ts`, `state.ts`; unit and e2e)
+  - [x] 10 the two-press hint (`hint.ts`, `reason.ts`; unit and e2e)
+  - [x] 11 progress dots (`dots.ts`, `layout.ts`; unit and e2e)
+  - [x] 12 the neutral legend (`visible.ts`, `tests/support/rule-words.ts`)
+  - [x] 13 docs: GDD §3.1, §3.3, §3a, §4, §11, §12; GENERATOR §1.1, §4.6, §6, §6.1, §7, §8,
+        §10.1; docs/questions.md D67–D79; PROGRESS
+  - [x] 14 gates green: `npm run check`, `npm test` (392), `npm run levels:check` (207.0 s),
+        `npm run build`, `npm run e2e` (39), `npm run size` (1.71 MB); the design critique of
+        the palette (diamonds for polka dots, larger dots with a rim)
+  - [ ] the auditor's A9 re-run on the new files, `code-review` and the adversarial audit
+        (KRİTİK and YÜKSEK closed); the commit (the main session)
+  - [ ] round 2, the last (docs/gate-b-round1.md §9: a new playtester at 360 × 640 @2x, houses
+        1–20, 27, 31, 34; B1–B7 unchanged; a fail stops the work)
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B
 - `game/feel.ts` (every GDD §3a value as a named constant), procedural textures (ghost states,

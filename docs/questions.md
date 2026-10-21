@@ -453,9 +453,108 @@ started with its test seen failing (docs/PROGRESS.md, "Epic 3, independent audit
   plan. It also found one margin the audit did not list: a mark on a lit cell of a glowing room,
   1.41:1.
 
+## 2026-10-21 (Gate B tune round 1 of 2: coder)
+
+Round 1 of Gate B failed (the playtester: no real insight early, objects that change nothing,
+unreadable boards, rules arriving untaught, failure louder than success, controls fighting the
+player). The lead designer's plan, docs/gate-b-round1.md, was adopted whole; each line below
+records a decision with the line it rests on (plan §10). Gate A's thresholds and Gate B's bars
+B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B tune round 1".
+
+- **D67 Insights, named for people** (brief:187–200; TASKS Gate B B4; plan §1.1, §1.3). The
+  grader names every non-T1 step in its own pass: `shape` (a room whose own shape lies in one
+  line; not an insight), `lamp`, `line`, `cross`, `count` (T3), `chain` (T4); when several rooms
+  explain a T2 step the simplest name wins (GENERATOR.md §4.6). "Two distinct insights" = two
+  insight episodes (episodes with a step other than `shape`), required in every house from 10
+  and every daily; of two kinds in the bands that carry difficulty (hard, cycle 1–9, manors,
+  dailies); rests may repeat a kind. Houses 4–8 teach shape, line, cross, line and cross, then
+  another trick; house 9 one insight; 10 needs a cross; consecutive teach houses (4–11, 17–19)
+  differ in their trick (kinds plus `block` and `light`). Houses 10–11 move to 6 × 6 (0 of 834
+  5 × 5 candidates had two insights with every block relevant); d windows 4–14 for houses 6–8
+  and 6–16 for 10–11 (levers, D35; brief:223–224).
+- **D68 Every object matters** (brief:56–58; plan §1.2). Two tests per block and lamp, residents
+  placed: the literal one (the object removed) and rule isolation (a block made see-through, a
+  lamp with its light off); each must cost the house its unique solution or change its grade (d,
+  the path or the insight names). Deviation from the plan, recorded: the grader alone decides
+  (its steps are sound, so a finished grade with the stored placements proves uniqueness; no
+  solver run), and a see-through block lets light through as well as sight (the plan's prototype
+  let only sight through). Measured on the list before: 1,183 of 5,171 blocks and 14 of 1,892
+  lamps idle by rule isolation, 645 of 7,063 objects by the literal test; after: none.
+- **D69 Boards capped at 8 × 8; the cell rule in CSS px** (brief:230, brief:350; plan §2.1).
+  No house is larger than 8 × 8 (`SIDE_MAX`); manors are 8 × 8 with 9–12 rooms and 1–6 blocks.
+  The portrait board runs almost edge to edge (side margin 12 design px, was 32), so cells are
+  ≥ 44 CSS px on a 360 × 640 phone and ≥ 66 at 540 × 960 (8 × 8: 44.0 and 66), and ≥ 80 design
+  px in every arrangement; this replaces "cells ≥ 80 design px at 9 × 9" (GDD §12). Walls
+  clamp(0.09 × cell, 12, 18) design px (≥ 4 CSS px at 360 wide). Pace over depth: depth comes from
+  the deductions (D67), not the area; the plan's recommendation to Hasan, who can overrule it.
+  CLAUDE.md rule 5 still says "Cells ≥ 80 design px at 9 × 9": flagged, not edited (no agent
+  message may change CLAUDE.md).
+- **D70 Teaching demonstrations and residents** (brief:36, the non-goal on givens; brief:155;
+  plan §3). Houses 1, 2, 9 and 17 show their rule before input opens, from pure timelines
+  (`src/game/demo.ts`; GDD §3.3): ≤ 1.5 s, a tap skips it and never counts, a resumed house
+  never replays it. Houses 9 (two residents, a bookshelf between them) and 17 (one, unlit beside
+  the beam) get residents chosen from the solution, the first after which the house still asks
+  for its insights; an exception to the brief's non-goal, since they teach and never make a house
+  easier than its band. GameReady still fires when the first house is drawn: a tap answers at
+  once (it skips the demonstration).
+- **D71 Palette, floors F1–F7, the light hatch** (brief:50–52; CLAUDE.md Rendering and rule 8;
+  plan §2.2). Twelve floors (4 lightness levels × 3 dusty hues, chroma ≤ 20), a pattern on every
+  floor, inks 13 L* darker, dark walls, marks and lines; light as amber stripes with a brown
+  outline over the wallpaper; settled as a dashed teal ring inside the walls over a faint teal
+  wash; furniture a bookshelf, the lamp a disc with rays. After the design critique: small
+  diamonds replace the plan's polka dots (dots on the palest rose read as a nursery wallpaper),
+  and the progress dots are larger (10 CSS px in radius at 360 wide) with a light rim ≥ 3:1
+  against the page (an empty dot was 1.9:1). `tests/contrast.test.ts` holds F1–F7
+  over every floor state: plain, lit, settled and (beyond the plan) lit in a settled room; the
+  hatch's brown outline runs along one side of each stripe (the plan drew it round both). F1 and
+  F4–F6 hold for grayscale and a deuteranope as well as in normal vision: the plan's brown
+  outline (`#633010`) fell to 2.96:1 for a deuteranope, so it is `#5a2b0e`. The
+  e2e reads the wall pixels against the floor beside them at 360 × 640 in houses 1, 17 and 34.
+- **D72 Drag moves a ghost** (brief:79–81 made drags paint only; plan §5). A drag that starts on
+  a placed ghost carries it: its own room → relocation, a room without a ghost → `moved`,
+  anywhere else back with a nudge; one move, one undo step. A drag from an empty cell still
+  paints, one from a mark erases, one from a resident only nudges it. CLAUDE.md's input rule
+  does not mention it yet: flagged, not edited.
+- **D73 Success outweighs failure on screen** (brief:135, brief:137; GDD §3a said ≤ 1.2 s for the
+  win; plan §4). A settle bobs the ghost (scale 1.15, 8 px, 160 ms), draws the room's ring and
+  fills its dot; the shiver is ±3 px, 60 ms, never repeated; the glance 250 ms; the finale about
+  2.0 s (hit stop 50 ms, the room sweep, a hop and turn, two waves, the solve time ticking in, the
+  next house sliding in from 1,650 ms for 350 ms), a tap skips it from 600 ms on. Beyond the
+  plan: the finale runs on the wall clock less paused time, frame by frame (Phaser's clock lags
+  on slow frames, so the beat took up to 6.5 s headless), its effects on the tween clock, and the
+  next house is built during the hit stop, so the slide never stutters.
+- **D74 The hint in two presses** (brief:83–85; plan §5). The first press counts the hint, starts
+  the cooldown and shows the reason (`hintExplain`: the segments and rooms of the grader's steps
+  up to the next forced placement, from the board as it stands, plus the lines along which the
+  ghosts on the board see the target room's other cells; or the wrong ghost); the second does it.
+  The player's own move to a ghost in between completes it. Under `?playtest=1` the hooks never
+  show the placement's cell.
+- **D75 Progress dots** (not in the brief; Gate B's only counter of micro-progress; plan §6).
+  One dot per room, a swatch of its floor and wallpaper; full = settled; the finale's solve time
+  takes the row's place.
+- **D76 A neutral legend** (plan §7; extends D63). `visible()` names shapes, colours, positions
+  and poses only: areas, thick dark lines, yellow stripes, a bookshelf shape, a round icon with
+  rays, figures with open eyes, both hands over the eyes or squinting under one hand, dashed teal
+  outlines, small dark dots, color swatches. `RULE_WORDS` grows to the plan's list.
+- **D77 The build's speed** (GENERATOR.md §9 A8; plan §12 risk 2). The insight names come from
+  the grader's own pass (no second run); relevance needs no solver (D68); a candidate gets at most
+  50 border moves to break a second solution (`UNIQUE_FIX_MOVES`, was 200: successes need ≤ 50
+  in about 99 % of cases, houses 1–36 came out byte for byte the same and built in 28 s instead of
+  74 s); `CANDIDATE_LIMIT` 50,000 (was 2,000). An incremental solver gave the same files but ran
+  slower, so the solver is unchanged.
+- **D78 Turned houses keep their insights** (A8; D54, D56). A house the list turns after 1000
+  (506–1000) must ask for its band's insight episodes and kinds in all four quarter turns, not
+  only keep its grade: a turn can name a step differently. Before this rule 13 turned houses had
+  fewer than two insight episodes and 26 fewer than two kinds.
+- **D79 Dev builds keep wall-clock time** (helpers; D60). `?fpsmin=N` also turns Phaser's
+  start-up cool-down off (`panicMax: 0`), so on a GPU-less machine timers keep wall-clock time
+  from the first frame; the playtester's links already carry `fpsmin=1`. Production is unchanged.
+
 ## Open questions (defaults in force)
 
-- **For Hasan (product direction): pace or depth, if the first real times disagree with the brief?**
+- **For Hasan (product direction): pace or depth?** Since Gate B round 1 the default is pace:
+  no board above 8 × 8, depth from the deductions (D69). Earlier wording, kept for the record:
+  **pace or depth, if the first real times disagree with the brief?**
   The brief's own formula puts houses 4–24 at about 65–145 s and houses from 25 at about 2–3 minutes
   (manors about 4), against its minute map's 30–90 s; by the formula the first 10 minutes end around
   house 10 rather than 13 (furniture at about 7:20 instead of 4:20). Default until his answer:
@@ -465,6 +564,7 @@ started with its test seen failing (docs/PROGRESS.md, "Epic 3, independent audit
   the listing (brief:400).
 - Houses 4–11 for genre fans — the brief's windows give them one or two eliminations each; if Gate B
   finds them dull, raise their windows first (one line each in `params.ts`).
-- Mark gesture — default: drag to paint; revisit after the phone test (brief:402).
+- Mark gesture — default: drag to paint; a drag that starts on a ghost carries it (D72); revisit
+  after the phone test (brief:402).
 - Elements after v0.1 — two-ghost rooms and mirrors in v0.2, after the first sandbox numbers
   (brief:406).

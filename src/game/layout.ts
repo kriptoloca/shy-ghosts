@@ -11,10 +11,14 @@ import {
   BUTTON_PAD,
   BUTTON_R_MAX,
   DESIGN_LONG_MAX,
+  DOT_COLUMNS,
+  DOT_GAP,
+  DOT_R_MAX,
   DESIGN_SHORT,
   GRID_LINE,
   LANDSCAPE_COLUMN,
   LAYOUT_MARGIN,
+  PORTRAIT_SIDE_MARGIN,
   PORTRAIT_BOTTOM_BAND,
   PORTRAIT_TOP_BAND,
   SQUARE_BAND,
@@ -139,9 +143,11 @@ export interface Layout {
 
 /**
  * The Game screen for a design size and a house of side `n` (GDD §12). Portrait: a top band, the
- * board square, a bottom band with undo and hint. Landscape: the board on the left, the buttons in
- * a column on the right. Square (1:1 and near it): thinner bands around a smaller board. The board
- * does not depend on `n`, so every house sits in the same frame; cells stay ≥ 80 px at 9 × 9.
+ * board square almost edge to edge (12 design px each side, D69), a bottom band with undo and
+ * hint. Landscape: the board on the left, the buttons in a column on the right. Square (1:1 and
+ * near it): thinner bands around a smaller board. The board does not depend on `n`, so every
+ * house sits in the same frame; at 8 × 8, the largest house, cells stay ≥ 80 design px in every
+ * arrangement and ≥ 44 CSS px on a 360 × 640 phone.
  */
 export function computeLayout(size: Size, n: number): Layout {
   const { width: w, height: h } = size;
@@ -168,7 +174,9 @@ export function computeLayout(size: Size, n: number): Layout {
     top = { x: 0, y: 0, width: w, height: above };
     hud = { x: 0, y: h - below, width: w, height: below };
     const room = h - above - below;
-    const side = Math.min(w - 2 * m, room - 2 * m);
+    // portrait boards run almost edge to edge, so the cells stay large enough to tap (D69)
+    const across = w - 2 * (portrait ? PORTRAIT_SIDE_MARGIN : m);
+    const side = Math.min(across, room - 2 * m);
     board = { x: (w - side) / 2, y: above + (room - side) / 2, width: side, height: side };
     const r = Math.min(BUTTON_R_MAX, below / 2 - BUTTON_PAD);
     const y = hud.y + below / 2;
@@ -190,6 +198,32 @@ export function computeLayout(size: Size, n: number): Layout {
     hud,
     buttons,
   };
+}
+
+/**
+ * The progress dots (D75): one per room, in room-id order. Portrait and square: a row centred in
+ * the top band. Landscape: rows of DOT_COLUMNS from the top of the HUD column, above the buttons.
+ * The radius shrinks from DOT_R_MAX only when the row would not fit.
+ */
+export function dotsLayout(l: Layout, rooms: number): Circle[] {
+  const m = LAYOUT_MARGIN;
+  if (l.top) {
+    const across = l.top.width - 2 * m;
+    const r = Math.min(DOT_R_MAX, (across / rooms - DOT_GAP) / 2, l.top.height / 2 - DOT_GAP);
+    const step = 2 * r + DOT_GAP;
+    const x0 = l.top.x + l.top.width / 2 - ((rooms - 1) * step) / 2;
+    const y = l.top.y + l.top.height / 2;
+    return Array.from({ length: rooms }, (_, k) => ({ x: x0 + k * step, y, r }));
+  }
+  const cols = Math.min(DOT_COLUMNS, rooms);
+  const r = Math.min(DOT_R_MAX, ((l.hud.width - 2 * m) / cols - DOT_GAP) / 2);
+  const step = 2 * r + DOT_GAP;
+  const x0 = l.hud.x + l.hud.width / 2 - ((cols - 1) * step) / 2;
+  return Array.from({ length: rooms }, (_, k) => ({
+    x: x0 + (k % cols) * step,
+    y: l.hud.y + m + r + Math.floor(k / cols) * step,
+    r,
+  }));
 }
 
 /** The cell under a point, or −1 outside the board. */

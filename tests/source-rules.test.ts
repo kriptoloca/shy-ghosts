@@ -67,3 +67,66 @@ describe('the Game scene changes the save only through the progress guards (D50)
     expect(game).toMatch(/\badvanceHouse\(/);
   });
 });
+
+describe('the board draws only with the palette tests/contrast.test.ts holds to its floors (D71)', () => {
+  /** What the floors F1–F7 cover: floors, wallpaper, walls, the light hatch, the settled cue, ink. */
+  const TESTED = [
+    'COLOR_FLOORS',
+    'COLOR_FLOOR_INKS',
+    'COLOR_WALL',
+    'COLOR_HATCH',
+    'COLOR_HATCH_EDGE',
+    'COLOR_SETTLED_WASH',
+    'COLOR_SETTLED_RING',
+    'COLOR_SEEN_LINE',
+    'COLOR_GLANCE',
+    'COLOR_MARK',
+    'COLOR_FURNITURE_EDGE',
+    'COLOR_LAMP_EDGE',
+  ];
+  const colours = (path: string): string[] => [
+    ...new Set(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').match(/\bCOLOR_\w+/g)),
+  ];
+
+  it('no colour is written as a literal anywhere in src/game', () => {
+    const literal = tsFiles('src/game').filter((f) => /0x[0-9a-f]{3,8}\b/i.test(code(f)));
+    expect(literal).toEqual([]);
+  });
+
+  it('board.ts draws the floors, walls, hatch, settled cue, marks and lines with the tested colours', () => {
+    const used = colours('src/game/board.ts');
+    // the solved frame and the win's room flashes are feedback over a finished house
+    expect(used.filter((c) => !TESTED.includes(c) && c !== 'COLOR_SOLVED_FRAME')).toEqual([]);
+    for (const c of TESTED.slice(0, 9)) expect(used).toContain(c);
+  });
+
+  it('the progress dots, the demonstrations and the hint reason draw on the floors with tested colours', () => {
+    // dots: swatches of the floors and their wallpaper, the settled ring; their rim and the
+    // solve-time digits stand on the dark page, not on a floor
+    expect(colours('src/game/dots.ts').filter((c) => !TESTED.includes(c))).toEqual([
+      'COLOR_DOT_RIM',
+      'COLOR_WIN_DIGITS',
+    ]);
+    // demonstrations: the glance's dotted trails and the lamp's light
+    expect(colours('src/game/demo-play.ts').filter((c) => !TESTED.includes(c))).toEqual([]);
+    // the reason: a wrong ghost's outline in the marks' ink; the veil (the page colour) and the
+    // pulse only dim or lighten a floor for HINT_REASON_MS
+    expect(
+      colours('src/game/reason.ts')
+        .filter((c) => !TESTED.includes(c))
+        .sort(),
+    ).toEqual(['COLOR_HINT_PULSE', 'COLOR_PAGE']);
+    expect(colours('src/game/reason.ts')).toContain('COLOR_MARK');
+  });
+
+  it('graybox.ts outlines the bookshelf and the lamp, and draws marks, with the tested colours', () => {
+    const used = colours('src/game/graybox.ts');
+    for (const c of ['COLOR_MARK', 'COLOR_FURNITURE_EDGE', 'COLOR_LAMP_EDGE', 'COLOR_HATCH']) {
+      expect(used).toContain(c);
+    }
+    // the rest belongs to the ghosts, the nightcap and the books: never drawn on a floor
+    expect(
+      used.filter((c) => !TESTED.includes(c) && !/^COLOR_(GHOST|CAP|SHELF|BOOKS)/.test(c)),
+    ).toEqual([]);
+  });
+});

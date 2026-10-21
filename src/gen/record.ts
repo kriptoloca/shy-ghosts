@@ -1,6 +1,6 @@
 import { QUARTER_TURNS } from '../config';
 import { rotate, type HouseData } from '../core/house';
-import type { Grade } from './grade';
+import type { Grade, Insight } from './grade';
 import { LEVEL_COUNT, ROTATION_FROM, ROTATION_SPAN, type Role } from './params';
 
 /**
@@ -21,6 +21,10 @@ export interface PlayHouse extends HouseData {
 export interface HouseMeta {
   id: number;
   grade: Grade;
+  /** Per episode, the insight of each of its steps (GENERATOR.md §4.6, D67). */
+  insights: Insight[][];
+  /** The episodes that need a real insight: a step other than `shape` (D67). */
+  insightEpisodes: number;
   /** The naive and the shallow player's exact chance to win (§5, D55). */
   players: { naive: number; shallow: number };
   role: Role;
@@ -47,7 +51,15 @@ export function playOf(h: House): PlayHouse {
 
 /** The build metadata of a house. */
 export function metaOf(h: House): HouseMeta {
-  return { id: h.id, grade: h.grade, players: h.players, role: h.role, seed: h.seed };
+  return {
+    id: h.id,
+    grade: h.grade,
+    insights: h.insights,
+    insightEpisodes: h.insightEpisodes,
+    players: h.players,
+    role: h.role,
+    seed: h.seed,
+  };
 }
 
 /** Play records and their metadata, joined place by place; fails loudly on any mismatch. */

@@ -25,22 +25,26 @@ interface Grade {
   t: [number, number, number, number]; // steps per technique, T1..T4 (added, D13)
   episodes: number;   // deduction episodes (§4.3, added)
 }
+type Insight = 'shape' | 'lamp' | 'line' | 'cross' | 'count' | 'chain'; // §4.6 (D67)
 interface House {
   id: number;         // 1-based position in the list; a daily's id is its day index (1–792)
-  n: number;          // 2..9
+  n: number;          // 2..8 (9 until D69)
   rooms: string;      // n² chars, the room id of each cell in base 36 (canonical ids, §1.2)
   objects: string;    // n² chars: '.' empty, 'F' furniture, 'L' lamp
-  givens: number[];   // cell indices of the residents (tutorial houses only)
+  givens: number[];   // cell indices of the residents (houses 1–3, 9 and 17; D70)
   solution: number[]; // the cell index of the ghost of each room id
   grade: Grade;
   players: { naive: number; shallow: number }; // win rates (§5, added)
   role: Role;         // added
   seed: number;       // the winning candidate's seed (uint32)
+  insights: Insight[][]; // each episode's step names, in order (§4.6; the meta file, D67)
+  insightEpisodes: number; // episodes with a step other than `shape` (D67)
 }
 ```
 
 The brief's fields (§5.5) keep their names and meanings; `grade.t`, `grade.episodes`, `players`
-and `role` are added because Gate A reads them (D13).
+and `role` are added because Gate A reads them (D13); `insights` and `insightEpisodes` because
+Gate B's round 1 reads them (D67). The `Grade` itself is unchanged.
 
 ### 1.2 Canonical room ids
 
@@ -170,6 +174,41 @@ Rows top to bottom, one letter per room; `.` empty, `F` furniture.
   is removed (T4). Path T4 T4 T2 T4 T2 T4 T1 T1 T1 T1, d = 42; solution (3,0), (0,1), (1,2),
   (2,3). With techniques up to T3 the grader is stuck at the start.
 
+### 4.6 Insights: each step named for people (Gate B tune round 1, D67)
+
+The grader keeps its techniques, weights, order and grade; in the same pass it names every non-T1
+step by what a player must see (`Step.insight`, `GradeResult.insights`, one list per episode):
+
+| Insight | Grader step | What the player sees | An insight? |
+| --- | --- | --- | --- |
+| `shape` | T2: the emptied room's **starting** candidates and empty cells already lie in x's segment | a room whose own shape lies in one line claims that line | no: visible at a glance |
+| `lamp` | T2: its starting candidates lie there, but not all its empty cells: lamp light took the rest | a lamp-made line | yes |
+| `line` | T2: the room lies in that segment only because ghosts placed earlier (or removals) took its other candidates | a room that became one line | yes |
+| `cross` | T2: the room's candidates lie in x's row and column segments together, in neither alone | a cell that sees a whole room from two sides | yes |
+| `count` | T3 | k rooms filling k lines | yes |
+| `chain` | T4 | "if here, then that room is empty" | yes |
+
+When several rooms explain one T2 step, the simplest name wins (shape < lamp < line < cross); the
+step also records the rooms and segments it used (the two-press hint shows them, D74).
+
+- An **insight episode** is an episode (§4.3) with at least one step other than `shape`.
+- **"Two distinct insights"** (the brief, TASKS Gate B B4) = at least two insight episodes: the
+  forced chain stalls twice and each time only a real deduction moves it on. In the bands that
+  carry difficulty (hard houses, cycle positions 1–9, manors, dailies) the house must also ask
+  for **two kinds** (`insightKinds`, shape left out). Teach, rest and breather houses may repeat a
+  kind; that is what makes them rests.
+- A house's **trick** = its insight kinds plus `block` when it has furniture and `light` when it
+  has a lamp (`trickOf`); consecutive teach houses (4–11, 17–19) must differ in it.
+- Fixtures (`tests/grade.test.ts`): §4.5's T2 fixture is a `shape`, the T3 one opens with two
+  `count`s, the T4 one with `chain`s. Rooms `AAABB / AACBB / CCCDD / EECCD / EECDD`, objects
+  `..... / F.... / ..... / ..F.. / L....`: room E's only cell (3,1) is placed, its column takes
+  room A down to row 0: a `line`. Rooms `AABBB / ACBBB / ACDEB / CCDEE / CCDEE`, a lamp at (0,3)
+  and a block at (3,2): room E keeps only column 4: a `lamp`. Rooms `ABBBB / AABCB / AADCC /
+  DDDDC / DDDEE`, a lamp at (1,0) and a block at (1,1): after A's ghost at (2,1), (3,3) sees room
+  C's (1,3) along its column and (3,4) along its row: a `cross`. Rooms `AABB / ABBB / ACCB /
+  CCDD`, a lamp at (0,2) and a block at (1,2): (3,0) sees all of A (lamp-made) and all of D (by
+  its shape): the step is a `shape`.
+
 ## 5. Player models (`src/gen/players.ts`; D17)
 
 The Munch Pixels lesson: a level list tuned against a random tapper hid that nothing needed a
@@ -210,41 +249,70 @@ at a house the players cannot read, and the build should stop and say so.
 5. Run the exact solver. While a second solution exists: take a cell c that the second solution
    uses and the stored one does not, and move it into a 4-adjacent different room Y, keeping c's
    old room connected with ≥ 2 cells and Y ≤ 2.5 × the average (Y now holds two ghosts of that
-   second solution, so it breaks). Up to 200 moves, then reject the candidate.
-6. Grade it with the band's techniques and check the band's windows (§7) in a staged order: D and
-   techniques first, then the teaching tests (houses 4, 9, 17), then the players (the costly part)
-   last.
+   second solution, so it breaks). Up to 50 moves (`UNIQUE_FIX_MOVES`; 200 until D77: in the
+   successful candidates of houses 1–36 the fix needs at most 50 in about 99 % of cases, and
+   those houses came out byte for byte the same), then reject the candidate.
+6. Residents (D70): in houses 9 and 17 the residents are chosen from the solution in reading
+   order (house 9: two in one line with a block between them; house 17: one unlit, beside a lit
+   cell), the first choice after which the house still asks for its insights; none fits: reject.
+7. Grade it with the band's techniques and check the band's windows (§7) in a staged order,
+   cheapest first: residents, grade, d, T3, episodes, insights (§4.6, from the same grader pass),
+   the manor's lead, the teaching tests (houses 4, 9, 17), the turn test (houses the list turns:
+   the same grade **and** the band's insights in all four turns, D78), object relevance (§6.1),
+   then the players (the costly part) last.
+
+### 6.1 Object relevance (`src/gen/relevance.ts`; D68)
+
+Every block and lamp must matter, by two tests, the residents placed both times:
+
+- **Literal:** the object removed (its cell empty, same room, a candidate unless lit) must cost
+  the house its unique stored solution or change its grade (d, the path or the insight names).
+- **Rule isolation:** what the object does switched off alone must do the same: a block made
+  see-through (still no place for a ghost, but sight and light pass it) and a lamp with its light
+  off (it stays a block).
+
+The grader alone decides (its steps are sound: a house it finishes with the stored placements has
+exactly that one solution; one it cannot finish has changed by definition), so no solver run is
+needed. On the list before this rule, rule isolation found 1,183 of 5,171 blocks and 14 of 1,892
+lamps idle (house 10's block, both of house 15's) and the literal test 645 of 7,063 objects.
 
 **Seeds and selection** (D15). Candidate k = 0 uses the brief's seed,
 `hashSeed('shy-ghosts/level/<id>')` (dailies `hashSeed('shy-ghosts/daily/<YYYY-MM-DD>')`);
 candidate k ≥ 1 appends `/<k>`. The first candidate that meets every window wins; houses 4, 9 and
 17 (the first of a new element) take the lowest d among the first 50 qualifying candidates (ties:
 lower k). A manor is built after the other houses of its cycle, so "above every other house of its
-cycle" can be checked. No winner in 2,000 candidates fails the build loudly.
+cycle" can be checked. No winner in 50,000 candidates (`CANDIDATE_LIMIT`; 2,000 until D77:
+houses 9–11 and 15–16 need several thousand under §4.6 and §6.1) fails the build loudly.
 
 ## 7. Bands and selection windows (`src/gen/params.ts`)
 
 Brief §5.4 for houses 1–24; the cycles, the daily and the extra selection rules are this plan's
-(D6–D8, D10, D16). "Episode ≥ 1" means at least one deduction episode (§4.3).
+(D6–D8, D10, D16), with Gate B's round-1 rules (D67–D70; docs/gate-b-round1.md §1.3). "Episode
+≥ 1" means at least one deduction episode (§4.3); "insight episodes" and "kinds" are §4.6's.
+Unless a row says otherwise every generated house from 10 asks for **2 insight episodes**, and
+every object of every house passes both tests of §6.1.
 
 | Houses | Role | N | Rooms | Furniture | Lamps | Techniques | D window | Further rules |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1–3 | tutorial | 2, 3, 4 | N | 0 | 0 | T1 only | — | data (GDD §3.3) |
-| 4–8 | teach | 5 | 5 | 0 | 0 | ≤ T2 | 4–12 | episode ≥ 1; house 4: lowest d of 50 |
-| 9–11 | teach | 5 | 5–6 (house 9: 6) | 1–2 | 0 | ≤ T2 | 6–14 | episode ≥ 1; house 9: two solution ghosts share a line with furniture between, lowest d of 50 |
-| 12–14 | hard | 6 | 6–7 | 2–3 | 0 | T3 required | 14–24 | naive ≤ 0.35 |
-| 15–16 | breather | 5 | 5–6 | 1–2 | 0 | ≤ T2 | 6–12 | episode ≥ 1 |
-| 17–19 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | episode ≥ 1; house 17: the light is necessary (the lamp as furniture gives ≥ 2 solutions), lowest d of 50 |
-| 20–22 | hard | 7 | 7–8 | 1–3 | 1–2 | T3 required | 18–30 | naive ≤ 0.35 |
-| 23–24 | rest | 6 | 6 | 0–1 | 1 | ≤ T2 | 8–14 | episode ≥ 1 |
-| cycle positions 1–3 | cycle-low | 7 | 7–10 | 0–5 | 0–3 | ≤ T3 | [12 + 6r, 22 + 8r] | naive ≤ 0.35 |
-| positions 4–9 | cycle-high | 7 or 8 | N to N+3 | 0–5 | 0–3 | T3 required | [18 + 8r, 32 + 10r] | naive ≤ 0.35 |
-| position 10 | manor | 9 | 9–12 | 0–5 | 0–3 | T3 required, ≤ 1 T4 step | [33 + 10r, 50 + 15r] | d above every other house of its cycle; naive ≤ 0.25 |
-| position 11 | breather | 6 | 6–9 | 0–5 | 0–3 | ≤ T2 | 6–14 | episode ≥ 1 |
-| daily | daily | 7 or 8 | N to N+2 | 1–4 | 0–2 | ≤ T3 | 20–34 | naive ≤ 0.35 |
+| 4–8 | teach | 5 | 5 | 0 | 0 | ≤ T2 | 4–12 (6–8: 4–14) | house 4: only `shape` steps, lowest d of 50; 5: a `line`; 6: a `cross`; 7: 2 insight episodes of 2 kinds; 8: 2 insight episodes; 5–8: a trick other than the house before |
+| 9 | teach | 5 | 6 | 1–2 | 0 | ≤ T2 | 6–14 | 1 insight episode; two residents in one line with furniture between (A5's pair), lowest d of 50 |
+| 10–11 | teach | 6 (5 until D67) | 6–7 | 1–3 | 0 | ≤ T2 | 6–16 | 10: a `cross`; a trick other than the house before |
+| 12–14 | hard | 6 | 6–7 | 2–3 | 0 | T3 required | 14–24 | 2 kinds; naive ≤ 0.35 |
+| 15–16 | breather | 5 | 5–6 | 1–2 | 0 | ≤ T2 | 6–12 | — |
+| 17–19 | teach | 6 | 6 | 0–2 | 1 | ≤ T2 | 8–16 | house 17: the light is necessary (the lamp as furniture gives ≥ 2 solutions), a `lamp` line, one resident unlit beside the beam, lowest d of 50; 18–19: a trick other than the house before |
+| 20–22 | hard | 7 | 7–8 | 1–3 | 1–2 | T3 required | 18–30 | 2 kinds; naive ≤ 0.35 |
+| 23–24 | rest | 6 | 6 | 0–1 | 1 | ≤ T2 | 8–14 | — |
+| cycle positions 1–3 | cycle-low | 7 | 7–10 | 0–5 | 0–3 | ≤ T3 | [12 + 6r, 22 + 8r] | 2 kinds; naive ≤ 0.35 |
+| positions 4–9 | cycle-high | 7 or 8 | N to N+3 | 0–5 | 0–3 | T3 required | [18 + 8r, 32 + 10r] | 2 kinds; naive ≤ 0.35 |
+| position 10 | manor | 8 (9 until D69) | 9–12 | 1–6 | 0–3 | T3 required, ≤ 1 T4 step | [33 + 10r, 50 + 15r] | 2 kinds; d above every other house of its cycle; naive ≤ 0.25 |
+| position 11 | breather | 6 | 6–9 | 0–5 | 0–3 | ≤ T2 | 6–14 | — |
+| daily | daily | 7 or 8 | N to N+2 | 1–4 | 0–2 | ≤ T3 | 20–34 | 2 kinds; naive ≤ 0.35 |
 
 - **Cycles** (D6): from house 25, periods of 11 houses: ten cycle positions (1–3 at 7 × 7, 4–9 at
-  7 × 7 or 8 × 8, 10 = a 9 × 9 manor) and then the 6 × 6 breather the brief puts after the manor.
+  7 × 7 or 8 × 8, 10 = an 8 × 8 manor, D69) and then the 6 × 6 breather the brief puts after the
+  manor. No house is larger than 8 × 8 (`SIDE_MAX`): its cells stay ≥ 44 CSS px on a 360 × 640
+  phone.
   Cycle `c = floor((id − 25) / 11)`, position `p = (id − 25) mod 11 + 1`. Manors: houses
   34 + 11c (34, 45, …, 991; 88 of them); breathers 35 + 11c. Houses 993–1000 are positions 1–8 of
   cycle 88.
@@ -274,6 +342,10 @@ Brief §5.4 for houses 1–24; the cycles, the daily and the extra selection rul
 - Prototype cost (one core): a 9 × 9 candidate ≈ 0.05 s; houses 4–80 with every rule of §7 in 5 s
   (5.6 candidates per house on average). Expect the whole build in a few minutes, inside the
   brief's 10-minute budget.
+- Measured: 120 s for the Epic 2 build; 448.8 s for Gate B round 1's prototype (a second grader
+  pass for the insight names, a solver run per relevance test); the repository's round-1 build
+  names the insights in the grader's own pass, decides relevance by the grader alone and moves at
+  most 50 borders per candidate (D77): see docs/PROGRESS.md for its time.
 
 ## 9. Gate A (closes Epic 2)
 
@@ -340,6 +412,15 @@ Every rule of §7 applied (30 houses per row; cycle 0 / cycle 10):
   House 9 with 6 rooms: 26 % of candidates qualify (6 ghosts in 5 rows put two in one row, so
   furniture stands between them by construction).
 - The blind player cannot win: a 5 × 5 house with 5 rooms of about 5 cells gives it ≈ 1/3,125.
+
+### 10.1 Gate B tune round 1 (2026-10-21)
+
+The evidence for §4.6, §6.1 and the round-1 rows of §7 is in docs/gate-b-round1.md §1.4 (the
+prototype) and docs/PROGRESS.md, "Gate B tune round 1" (the repository's build): every house from
+10 and every daily with two insight episodes, the bands that carry difficulty with two kinds,
+houses 5–9 each with a real insight, no two consecutive teach houses with one trick, no idle
+object by either test, no board above 8 × 8; Gate A's A1–A8 unchanged and green on the same
+files (`tests/round1.test.ts` and `tests/gate-a.test.ts`).
 
 ## 11. Tests (Vitest)
 

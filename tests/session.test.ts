@@ -23,18 +23,19 @@ describe('HouseSession', () => {
     expect(s.seconds).toBeCloseTo(1.75, 9);
   });
 
-  it('counts moves, hints and the moves that make a ghost seen; a nudge or nothing is no move', () => {
+  it('counts moves, hints (once, at the first press) and the moves that make a ghost seen; a nudge or nothing is no move', () => {
     // house 3: ACCC / ACBB / ADDB / DDDB, the resident at (0,3)
     const st = house3();
     const s = new HouseSession(3);
-    s.record(st.tap(8), 'tap'); // (2,0) in room A: calm
-    s.record(st.tap(9), 'tap'); // (2,1) in room D, same row: both seen, a conflict
-    s.record(st.tap(3), 'tap'); // the resident: a nudge
-    s.record(st.tap(2), 'tap'); // an empty cell of the resident's room: a nudge
-    s.record(st.stroke([5, 6], 'paint'), 'stroke');
-    s.record(st.undo(), 'undo');
-    s.record(st.hint(), 'hint'); // the wrong ghost at (2,1) floats away
-    s.record([], 'undo');
+    s.record(st.tap(8)); // (2,0) in room A: calm
+    s.record(st.tap(9)); // (2,1) in room D, same row: both seen, a conflict
+    s.record(st.tap(3)); // the resident: a nudge
+    s.record(st.tap(2)); // an empty cell of the resident's room: a nudge
+    s.record(st.stroke([5, 6], 'paint'));
+    s.record(st.undo());
+    s.hinted(); // the hint's first press shows the wrong ghost at (2,1) (D74)
+    s.record(st.hint()); // the second press: it floats away, a move of the same hint
+    s.record([]);
     expect({ moves: s.moves, hints: s.hints, conflicts: s.conflicts }).toEqual({
       moves: 5,
       hints: 1,
@@ -46,8 +47,8 @@ describe('HouseSession', () => {
     const st = house3();
     const s = new HouseSession(3);
     s.input();
-    s.record(st.tap(6), 'tap');
-    s.record(st.stroke([0, 4], 'paint'), 'stroke');
+    s.record(st.tap(6));
+    s.record(st.stroke([0, 4], 'paint'));
     s.tick(2500);
     const saved = s.inProgress(st);
     expect(saved).toEqual({

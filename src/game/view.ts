@@ -42,7 +42,8 @@ export class BoardView {
           // its `status` follows in the same list (D41)
           this.ghosts.set(e.cell, 'calm');
           break;
-        case 'relocated': {
+        case 'relocated':
+        case 'moved': {
           const st = this.ghosts.get(e.from) ?? 'calm';
           this.ghosts.delete(e.from);
           this.ghosts.set(e.to, st);

@@ -3,7 +3,16 @@ import { TUTORIAL_HOUSES } from '../data/tutorial';
 import { QUARTER_TURNS } from '../config';
 import { dateRange } from './dates';
 import { makeCandidate, type Candidate } from './generate';
-import { grade, type Grade, type GradeResult } from './grade';
+import {
+  TRIVIAL,
+  grade,
+  insightEpisodes,
+  insightKinds,
+  type Grade,
+  type GradeOptions,
+  type GradeResult,
+  type Insight,
+} from './grade';
 import {
   CANDIDATE_LIMIT,
   CYCLE_MANOR,
@@ -30,6 +39,7 @@ import {
 } from './params';
 import { exactWinRate } from './players';
 import { metaOf, playOf, type House } from './record';
+import { objectsMatter } from './relevance';
 import { hashSeed } from './rng';
 import { puzzleOf, solve, type Puzzle } from './solve';
 
@@ -46,6 +56,8 @@ export type Miss =
   | 'manor'
   | 'teach'
   | 'turn'
+  | 'insight'
+  | 'idle'
   | 'naive';
 
 /** How a house was found: the candidates tried and what the others missed. */
@@ -80,6 +92,35 @@ export interface BuildOptions {
 
 function sorted(cells: readonly number[]): number[] {
   return [...cells].sort((a, b) => a - b);
+}
+
+/**
+ * A house's trick (D67): the kinds of insight it asks for, plus `block` when it has furniture
+ * and `light` when it has a lamp. Depth does not count: two `line` stalls are one trick.
+ */
+export function trickOf(insights: readonly (readonly Insight[])[], objects: string): string[] {
+  const trick: string[] = insightKinds(insights);
+  if (objects.includes('F')) trick.push('block');
+  if (objects.includes('L')) trick.push('light');
+  return trick;
+}
+
+/** The house asks for what its band wants of its insights (D67). */
+export function insightsFit(
+  band: Band,
+  insights: readonly (readonly Insight[])[],
+  objects: string,
+  prevTrick: readonly string[] | null,
+): boolean {
+  const kinds = insightKinds(insights);
+  if (insightEpisodes(insights) < band.insightEpisodes) return false;
+  if (kinds.length < band.insightKinds) return false;
+  if (band.needInsight !== null && !kinds.includes(band.needInsight)) return false;
+  if (band.shapeOnly && insights.flat().some((i) => i !== TRIVIAL)) return false;
+  if (band.newTrick && prevTrick && trickOf(insights, objects).join() === prevTrick.join()) {
+    return false;
+  }
+  return true;
 }
 
 /** Two solution ghosts share a row or a column with furniture between them (house 9, A5). */
@@ -117,7 +158,8 @@ function sameGrade(a: Grade, b: Grade): boolean {
 
 /**
  * The house grades the same in every quarter turn (D54): houses 501–1000 come back turned after
- * house 1000 (D14), and the grader reads rows before columns, so a turn can change its path.
+ * house 1000 (D14), and the grader reads rows before columns, so a turn can change its path. A
+ * turn may name a step differently, but every turn still asks for the band's insights (D67).
  */
 export function gradeTurns(
   band: Band,
@@ -128,6 +170,7 @@ export function gradeTurns(
   for (let t = 1; t < QUARTER_TURNS; t++) {
     const r = grade(parseHouse(rotate(data, t)), { maxTech: band.maxTech, maxT4: band.maxT4 });
     if (!r.ok || !r.grade || !sameGrade(r.grade, g)) return false;
+    if (!insightsFit(band, r.insights, c.objects, null)) return false;
   }
   return true;
 }
@@ -145,6 +188,42 @@ function teaches(band: Band, c: Candidate, g: GradeResult): boolean {
   }
 }
 
+/**
+ * The residents of a teaching house (D70), from the solution in reading order: house 9 two
+ * ghosts in one line with a block between them, house 17 one beside the lamp's beam (on a cell
+ * next to a lit one). The first choice with which the house still asks for its band's d and
+ * insights wins; null when none does.
+ */
+export function residentsFor(band: Band, c: Candidate): { puzzle: Puzzle; g: GradeResult } | null {
+  const { n, objects } = c;
+  const sol = sorted(c.solution);
+  const options: number[][] = [];
+  if (band.residents === 'block-pair') {
+    for (const a of sol) {
+      for (const b of sol) if (a < b && furnitureBetween(n, objects, [a, b])) options.push([a, b]);
+    }
+  } else if (band.residents === 'beam-side') {
+    const lit = c.puzzle.lit;
+    for (const x of sol) {
+      const r = Math.floor(x / n);
+      const col = x % n;
+      const near = [r > 0 ? x - n : -1, r < n - 1 ? x + n : -1, col > 0 ? x - 1 : -1];
+      near.push(col < n - 1 ? x + 1 : -1);
+      if (near.some((y) => y >= 0 && lit[y] === true)) options.push([x]);
+    }
+  }
+  const opts: GradeOptions = { maxTech: band.maxTech, maxT4: band.maxT4 };
+  for (const givens of options) {
+    const puzzle = puzzleOf(c.puzzle, c.puzzle.roomOf, givens);
+    const g = grade(puzzle, opts);
+    if (!g.ok || !g.grade || g.grade.d < band.d[0] || g.grade.d > band.d[1]) continue;
+    if (insightEpisodes(g.insights) < band.insightEpisodes) continue;
+    if (band.needInsight !== null && !insightKinds(g.insights).includes(band.needInsight)) continue;
+    return { puzzle, g };
+  }
+  return null;
+}
+
 /** A candidate that met every window, waiting in the pool. */
 interface Qualified {
   k: number;
@@ -155,10 +234,11 @@ interface Qualified {
 
 /**
  * The house for one place in the list (GENERATOR.md §6–§7, D15): candidates k = 0, 1, … from
- * `seedKey` (and `seedKey/k`), each checked in a staged order (the generator, the grade with the
- * band's techniques, d, T3, the episodes, the manor's lead over its cycle, the teaching test, then
- * the naive player); the first that passes wins, or the lowest d among the first `lowestOf` that
- * pass. Fails loudly after CANDIDATE_LIMIT candidates without one.
+ * `seedKey` (and `seedKey/k`), each checked in a staged order, cheap to costly (the generator,
+ * the residents of houses 9 and 17, the grade with the band's techniques, d, T3, the episodes,
+ * the insights, the manor's lead over its cycle, the teaching test, the turn test, every object
+ * mattering, then the naive player); the first that passes wins, or the lowest d among the first
+ * `lowestOf` that pass. Fails loudly after CANDIDATE_LIMIT candidates without one.
  */
 function choose(
   label: string,
@@ -167,6 +247,7 @@ function choose(
   seedKey: string,
   cycleMax: number,
   searches: Search[],
+  prevTrick: readonly string[] | null = null,
 ): House {
   const misses: Partial<Record<Miss, number>> = {};
   const miss = (m: Miss): void => {
@@ -176,12 +257,22 @@ function choose(
   let k = 0;
   for (; k < CANDIDATE_LIMIT; k++) {
     const seed = hashSeed(k === 0 ? seedKey : `${seedKey}/${String(k)}`);
-    const c = makeCandidate(band, seed);
-    if ('rejected' in c) {
-      miss(c.rejected);
+    const made = makeCandidate(band, seed);
+    if ('rejected' in made) {
+      miss(made.rejected);
       continue;
     }
-    const g = grade(c.puzzle, { maxTech: band.maxTech, maxT4: band.maxT4 });
+    let c: Candidate = made;
+    let g: GradeResult;
+    if (band.residents !== null) {
+      const placed = residentsFor(band, made);
+      if (!placed) {
+        miss('teach');
+        continue;
+      }
+      c = { ...made, puzzle: placed.puzzle };
+      g = placed.g;
+    } else g = grade(c.puzzle, { maxTech: band.maxTech, maxT4: band.maxT4 });
     if (!g.ok || !g.grade) {
       miss('grade');
       continue;
@@ -202,6 +293,10 @@ function choose(
       miss('episodes');
       continue;
     }
+    if (!insightsFit(band, g.insights, c.objects, prevTrick)) {
+      miss('insight');
+      continue;
+    }
     if (band.role === 'manor' && d <= cycleMax) {
       miss('manor');
       continue;
@@ -212,6 +307,10 @@ function choose(
     }
     if (band.turnable && !gradeTurns(band, c, g.grade)) {
       miss('turn');
+      continue;
+    }
+    if (!objectsMatter(c.puzzle, c.solution, { maxTech: band.maxTech, maxT4: band.maxT4 }, g)) {
+      miss('idle');
       continue;
     }
     let naive: number | null = null;
@@ -242,9 +341,11 @@ function choose(
     n: best.c.n,
     rooms: best.c.rooms,
     objects: best.c.objects,
-    givens: [],
+    givens: sorted(best.c.puzzle.givens),
     solution: best.c.solution,
     grade: best.g.grade as NonNullable<GradeResult['grade']>,
+    insights: best.g.insights,
+    insightEpisodes: insightEpisodes(best.g.insights),
     players: {
       naive: best.naive ?? exactWinRate(best.c.puzzle, 'naive'),
       shallow: exactWinRate(best.c.puzzle, 'shallow'),
@@ -269,6 +370,8 @@ function tutorialHouses(): House[] {
       givens: [...d.givens],
       solution: [...d.solution],
       grade: g.grade,
+      insights: g.insights,
+      insightEpisodes: insightEpisodes(g.insights),
       players: {
         naive: exactWinRate(h, 'naive'),
         shallow: exactWinRate(h, 'shallow'),
@@ -290,6 +393,7 @@ export function buildLevels(opts: BuildOptions = {}): Built {
   const byId = new Map<number, House>();
   const one = (id: number, cycleMax = 0): void => {
     const band = bandFor(id);
+    const before = byId.get(id - 1);
     const house = choose(
       `house ${String(id)}`,
       id,
@@ -297,6 +401,7 @@ export function buildLevels(opts: BuildOptions = {}): Built {
       `shy-ghosts/level/${String(id)}`,
       cycleMax,
       searches,
+      before ? trickOf(before.insights, before.objects) : null,
     );
     byId.set(id, house);
     if (id % LOG_EVERY_HOUSES === 0) log(`house ${String(id)} (${String(byId.size)} built)`);

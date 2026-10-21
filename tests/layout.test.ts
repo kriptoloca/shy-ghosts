@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT } from '../src/config';
+import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT, DOT_R_MIN } from '../src/config';
+import { SIDE_MAX } from '../src/gen/params';
 import {
   BOOT_SIZES,
   bootLayout,
@@ -7,10 +8,17 @@ import {
   cellCenter,
   computeLayout,
   designSize,
+  dotsLayout,
   type Circle,
   type Rect,
   type Size,
 } from '../src/game/layout';
+
+/** Touch-size floors for a cell in CSS px (D69; WCAG 2.5.5's 44 px target on a 360 px phone). */
+const CSS_CELL_MIN_SMALL = 44;
+const CSS_CELL_MIN_LARGE = 66;
+/** Walls on the same phone (D71). */
+const WALL_CSS_MIN = 4;
 
 /** The design size (CLAUDE.md rule 5): short side 1080, long side follows the aspect. */
 describe('designSize', () => {
@@ -163,15 +171,49 @@ describe('computeLayout', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('every side 2–9 fills the same board; walls are thicker than the grid lines', () => {
+  it('cells ≥ 44 CSS px on a 360 × 640 phone and ≥ 66 at 540 × 960, every side up to 8 (D69)', () => {
+    // Scale.FIT shows the design size at the viewport's scale: 1080 design px across 360 CSS px
+    const cssCell = (w: number, h: number, n: number): number => {
+      const size = designSize(w, h);
+      return computeLayout(size, n).cell * Math.min(w / size.width, h / size.height);
+    };
+    for (let n = 2; n <= SIDE_MAX; n++) {
+      expect(cssCell(360, 640, n)).toBeGreaterThanOrEqual(CSS_CELL_MIN_SMALL);
+      expect(cssCell(540, 960, n)).toBeGreaterThanOrEqual(CSS_CELL_MIN_LARGE);
+    }
+    // the playtester's phone and the common ones in between keep the floor too
+    for (const [w, h] of [
+      [360, 780],
+      [375, 667],
+      [390, 844],
+      [412, 915],
+    ] as const) {
+      expect(cssCell(w, h, SIDE_MAX)).toBeGreaterThanOrEqual(CSS_CELL_MIN_SMALL);
+    }
+  });
+
+  it('cells ≥ 80 design px at 8 × 8 in every arrangement and every design size', () => {
+    const small = designSizes().filter((size) => computeLayout(size, SIDE_MAX).cell < CELL_MIN);
+    expect(small).toEqual([]);
+  });
+
+  it('every side 2–9 fills the same board; walls are three grid lines thick at least', () => {
     for (const size of [designSize(390, 844), designSize(600, 600), designSize(844, 390)]) {
       const nine = computeLayout(size, 9);
       for (let n = 2; n <= 9; n++) {
         const l = computeLayout(size, n);
         expect(l.board).toEqual(nine.board);
         expect(l.cell * n).toBeCloseTo(l.board.width, 9);
-        expect(l.wall).toBeGreaterThan(l.grid);
+        expect(l.wall).toBeGreaterThanOrEqual(3 * l.grid);
       }
+    }
+  });
+
+  it('walls are ≥ 4 CSS px on a 360 × 640 phone, for every side (D71)', () => {
+    const size = designSize(360, 640);
+    const scale = 360 / size.width;
+    for (let n = 2; n <= SIDE_MAX; n++) {
+      expect(computeLayout(size, n).wall * scale).toBeGreaterThanOrEqual(WALL_CSS_MIN);
     }
   });
 
@@ -194,5 +236,47 @@ describe('computeLayout', () => {
         expect(cellAt(l, l.board.x, l.board.y + l.board.height + 1)).toBe(-1);
       }
     }
+  });
+});
+
+describe('dotsLayout: one progress dot per room (D75)', () => {
+  it('in the top band (portrait, square) or the HUD column (landscape), clear of the board and the buttons', () => {
+    const wrong: string[] = [];
+    for (const size of designSizes()) {
+      for (const rooms of [2, 5, 8, 12]) {
+        const l = computeLayout(size, SIDE_MAX);
+        const dots = dotsLayout(l, rooms);
+        const tag = `${String(size.width)}×${String(size.height)} ${String(rooms)} rooms`;
+        if (dots.length !== rooms) wrong.push(`${tag}: ${String(dots.length)} dots`);
+        const band = l.top ?? l.hud;
+        dots.forEach((d, k) => {
+          if (!within(circleBox(d), band)) wrong.push(`${tag}: dot ${String(k)} outside its band`);
+          if (overlaps(circleBox(d), l.board)) wrong.push(`${tag}: dot ${String(k)} on the board`);
+          for (const b of [l.buttons.undo, l.buttons.hint]) {
+            if (overlaps(circleBox(d), circleBox(b)))
+              wrong.push(`${tag}: dot ${String(k)} on a button`);
+          }
+          for (const e of dots.slice(k + 1)) {
+            if (Math.hypot(d.x - e.x, d.y - e.y) < d.r + e.r) wrong.push(`${tag}: dots overlap`);
+          }
+          if (d.r < DOT_R_MIN) wrong.push(`${tag}: dot ${String(k)} too small`);
+        });
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('stay readable on a 360 × 640 phone: ≥ 9 CSS px in radius with 12 rooms (design critique)', () => {
+    const DOT_CSS_R_MIN = 9;
+    const l = computeLayout(designSize(360, 640), SIDE_MAX);
+    const css = 360 / l.size.width;
+    for (const d of dotsLayout(l, 12)) expect(d.r * css).toBeGreaterThanOrEqual(DOT_CSS_R_MIN);
+  });
+
+  it('runs in room-id order: left to right, then down', () => {
+    const l = computeLayout(designSize(390, 844), 6);
+    const dots = dotsLayout(l, 6);
+    expect(dots.map((d) => d.x)).toEqual([...dots.map((d) => d.x)].sort((a, b) => a - b));
+    expect(new Set(dots.map((d) => d.y)).size).toBe(1);
   });
 });

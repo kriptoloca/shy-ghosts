@@ -27,7 +27,12 @@ function randomMove(rng: Rng, s: PlayState): PlayEvent[] {
     const cells = Array.from({ length: rng.int(1, 6) }, () => rng.int(0, h.size - 1));
     return s.stroke(cells, s.strokeModeAt(cells[0] as number));
   }
-  if (x < 0.9) return s.undo();
+  if (x < 0.85) return s.undo();
+  if (x < 0.93) {
+    // a ghost carried somewhere (D72)
+    const ghosts = s.ghostCells();
+    return s.drag(ghosts[rng.int(0, Math.max(0, ghosts.length - 1))] ?? 0, rng.int(-1, h.size - 1));
+  }
   return s.hint();
 }
 
@@ -103,41 +108,44 @@ describe('visibleText', () => {
     return { s, v: BoardView.of(s) };
   };
 
-  it('house 1 with two ghosts in one row: walls, floor, poses, the dotted line', () => {
+  it('house 1 with two figures in one row: areas and lines, floor, poses, the dotted line', () => {
     const { s, v } = house1();
-    v.play(s.tap(1)); // (0,1): it and the ghost in the nightcap at (0,0) share row 0
+    v.play(s.tap(1)); // (0,1): it and the figure in the nightcap at (0,0) share row 0
     expect(visibleText(1, v)).toBe(
       [
-        'house 1 · 2 × 2 · 2 rooms · 0 of 2 rooms glowing · plain frame',
-        'rooms and walls (a letter per room; | and --- are thick walls; cells as (row,col) from 0 at the top left):',
+        'house 1 · 2 × 2 · 2 areas · 0 of 2 areas inside a dashed teal outline · plain frame',
+        'areas and lines (a letter per area; | and --- are thick dark lines; cells as (row,col) from 0 at the top left):',
         '+---+---+',
         '| A | B |',
         '+   +   +',
         '| A | B |',
         '+---+---+',
-        'floor (. plain, ~ warm wash, # dark block, @ sun icon):',
+        'floor (. bare, ~ yellow stripes, # a bookshelf shape, @ a round icon with rays):',
         '. .',
         '. .',
-        'ghosts and dots (O eyes open, H both hands over the eyes, Q squinting under a hand; ' +
-          'lowercase: wearing a nightcap; * small grey dot; . nothing):',
+        'figures and dots (O a figure with open eyes, H a figure with both hands over its eyes, ' +
+          'Q a figure squinting under one hand; lowercase: wearing a nightcap; * a small dark dot; ' +
+          '. nothing):',
         'h H',
         '. .',
-        'ghosts: (0,0) hands over the eyes, nightcap; (0,1) hands over the eyes',
+        'figures: (0,0) both hands over its eyes, nightcap; (0,1) both hands over its eyes',
         'dotted lines: (0,0) to (0,1)',
-        'grey dots: none',
-        'glowing rooms: none',
+        'small dark dots: none',
+        'dashed teal outlines: none',
+        'color swatches: 2, 0 with a dark ring',
       ].join('\n'),
     );
-    v.play(s.tap(3)); // the ghost glides to (1,1)
+    v.play(s.tap(3)); // the figure glides to (1,1)
     const text = visibleText(1, v);
-    expect(text).toContain('2 of 2 rooms glowing · warm frame');
+    expect(text).toContain('2 of 2 areas inside a dashed teal outline · warm frame');
     expect(text).toContain('o .\n. O');
-    expect(text).toContain('ghosts: (0,0) eyes open, nightcap; (1,1) eyes open');
+    expect(text).toContain('figures: (0,0) open eyes, nightcap; (1,1) open eyes');
     expect(text).toContain('dotted lines: none');
-    expect(text).toContain('glowing rooms: A, B');
+    expect(text).toContain('dashed teal outlines: A, B');
+    expect(text).toContain('color swatches: 2, 2 with a dark ring');
   });
 
-  it('dark blocks, a sun icon, its warm wash, a squinting ghost and grey dots', () => {
+  it('bookshelf shapes, a round icon with rays, its yellow stripes, a squinting figure and dots', () => {
     const rows = ['..F..', '.....', 'L....', '...F.', '.....'];
     const h: HouseModel = parseHouse({
       n: 5,
@@ -148,12 +156,12 @@ describe('visibleText', () => {
     });
     const s = new PlayState(h);
     const v = BoardView.of(s);
-    v.play(s.tap(12)); // (2,2), in the sun icon's wash
+    v.play(s.tap(12)); // (2,2), on yellow stripes
     v.play(s.stroke([4, 9], 'paint'));
     const text = visibleText(42, v);
     expect(text).toContain(
       [
-        'floor (. plain, ~ warm wash, # dark block, @ sun icon):',
+        'floor (. bare, ~ yellow stripes, # a bookshelf shape, @ a round icon with rays):',
         '~ . # . .',
         '~ . . . .',
         '@ ~ ~ ~ ~',
@@ -162,8 +170,8 @@ describe('visibleText', () => {
       ].join('\n'),
     );
     expect(text).toContain('. . . . *\n. . . . *\n. . Q . .');
-    expect(text).toContain('ghosts: (2,2) squinting under a hand');
-    expect(text).toContain('grey dots: (0,4) (1,4)');
+    expect(text).toContain('figures: (2,2) squinting under one hand');
+    expect(text).toContain('small dark dots: (0,4) (1,4)');
   });
 
   it('room letters run A, B, … by room id', () => {

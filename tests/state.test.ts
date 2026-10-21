@@ -283,6 +283,91 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
   });
 });
 
+describe('drag a ghost (D72)', () => {
+  /** SQUARES with a ghost in room 0 at cell 0. */
+  const placed = (): PlayState => {
+    const s = new PlayState(SQUARES);
+    s.tap(0);
+    return s;
+  };
+
+  it('dropped in its own room it relocates, exactly as a tap there would', () => {
+    const dragged = placed();
+    const tapped = placed();
+    expect(dragged.drag(0, 5)).toEqual(tapped.tap(5));
+    expect(view(dragged)).toEqual(view(tapped));
+  });
+
+  it('dropped on an empty cell of a room without a ghost it moves there: one room cools, one settles', () => {
+    const s = placed();
+    const screen = new Screen(SQUARES, view(s));
+    const events = s.drag(0, 10); // room 0 → room 3
+    expect(events).toEqual([
+      { type: 'moved', from: 0, to: 10, fromRoom: 0, toRoom: 3 },
+      st(10, 'calm', 'calm'),
+      { type: 'unsettled', room: 0 },
+      { type: 'settled', room: 3 },
+    ]);
+    expect([s.ghostOf(0), s.ghostOf(3)]).toEqual([null, 10]);
+    screen.play(events);
+    expect(screen.problems).toEqual([]);
+    expect(screen.view()).toEqual(view(s));
+  });
+
+  it('anywhere else it goes back with a nudge, which is no move', () => {
+    const s = placed();
+    s.tap(2); // room 1 holds a ghost
+    const before = view(s);
+    expect(s.drag(0, 3)).toEqual([{ type: 'nudged', cell: 0 }]); // a room that holds a ghost
+    expect(s.drag(0, -1)).toEqual([{ type: 'nudged', cell: 0 }]); // off the board
+    expect(view(s)).toEqual(before);
+    s.undo(); // takes back the tap on cell 2, not a refused drag
+    expect(s.ghostOf(1)).toBeNull();
+    const ex = new PlayState(EXAMPLE);
+    ex.tap(e(0, 1));
+    expect(ex.drag(e(0, 1), e(0, 2))).toEqual([{ type: 'nudged', cell: e(0, 1) }]); // a bookshelf
+    expect(ex.drag(e(0, 1), e(2, 0))).toEqual([{ type: 'nudged', cell: e(0, 1) }]); // a lamp
+  });
+
+  it('a resident only nudges; a drag from an empty cell or onto itself does nothing', () => {
+    const h1 = H1();
+    expect(h1.drag(0, 1)).toEqual([{ type: 'nudged', cell: 0 }]);
+    expect(h1.canUndo).toBe(false);
+    const s = placed();
+    expect(s.drag(1, 10)).toEqual([]);
+    expect(s.drag(0, 0)).toEqual([]);
+  });
+
+  it('one drag is one undo step: undo moves it back and brings back a mark it cleared', () => {
+    const s = placed();
+    s.stroke([10], 'paint');
+    const screen = new Screen(SQUARES, view(s));
+    const before = view(s);
+    const moved = s.drag(0, 10);
+    expect(moved.slice(0, 2)).toEqual([
+      { type: 'moved', from: 0, to: 10, fromRoom: 0, toRoom: 3 },
+      { type: 'marked', cells: [10], on: false },
+    ]);
+    screen.play(moved);
+    const back = s.undo();
+    expect(back.slice(0, 2)).toEqual([
+      { type: 'moved', from: 10, to: 0, fromRoom: 3, toRoom: 0 },
+      { type: 'marked', cells: [10], on: true },
+    ]);
+    screen.play(back);
+    expect(screen.problems).toEqual([]);
+    expect(view(s)).toEqual(before);
+    expect(screen.view()).toEqual(before);
+  });
+
+  it('a solved board takes no drag', () => {
+    const s = H1();
+    s.tap(3);
+    expect(s.solved).toBe(true);
+    expect(s.drag(3, 1)).toEqual([]);
+  });
+});
+
 describe('marks (GDD §3.1, D21)', () => {
   it('paint marks only empty, ghost-free, unmarked cells, lit ones included, once each', () => {
     const s = new PlayState(EXAMPLE);
@@ -375,7 +460,29 @@ describe('hint (GDD §3.1)', () => {
     expect(s.ghostCells()).toEqual([3]);
   });
 
-  it('otherwise the solution ghost of the room with the fewest free cells appears', () => {
+  it('the first press only explains: the board stays as it is (D74)', () => {
+    const s = H3();
+    s.tap(9); // a wrong ghost in room D
+    const before = view(s);
+    expect(s.explainHint()).toEqual({ kind: 'remove', cell: 9 });
+    expect(view(s)).toEqual(before);
+    s.undo();
+    expect(s.explainHint()).toMatchObject({ kind: 'place', room: 2, cell: 6 });
+    expect(view(s)).toEqual(view(H3()));
+  });
+
+  it("the second press does what the first explained: the grader's next forced ghost", () => {
+    const s = H3();
+    const e = s.explainHint();
+    expect(e?.kind).toBe('place');
+    expect(s.hint()[0]).toEqual({
+      type: 'placed',
+      cell: e?.kind === 'place' ? e.cell : -1,
+      room: e?.kind === 'place' ? e.room : -1,
+    });
+  });
+
+  it('otherwise the next forced placement appears (here the room with one free cell left)', () => {
     const s = H3();
     // free cells: A 2, B 1 (the given sees the rest), D 5 → B's ghost at (1,2)
     expect(s.hint()[0]).toEqual({ type: 'placed', cell: 6, room: 2 });
@@ -386,7 +493,7 @@ describe('hint (GDD §3.1)', () => {
     expect(s.hint()).toEqual([]);
   });
 
-  it('ties go to the lowest room id; a hint on a marked cell clears the mark', () => {
+  it('with no forced placement (a house with two solutions): the fewest free cells, ties by room id', () => {
     const s = new PlayState(SQUARES);
     s.stroke([0], 'paint');
     expect(s.hint().slice(0, 2)).toEqual([
