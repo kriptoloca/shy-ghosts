@@ -187,22 +187,28 @@ async function create(): Promise<Platform> {
 
 // ---- real SDK ---------------------------------------------------------------------------------
 
-class BridgeStorageBackend implements StorageBackend {
+/** The part of `bridge.storage` the save uses (docs/bridge-notes.md, Storage module). */
+export interface BridgeStorageApi {
+  get(key: string, tryParseJson?: boolean): Promise<unknown>;
+  set(key: string, value: unknown): Promise<void>;
+}
+
+/**
+ * The save through the SDK's storage. A failed read rejects instead of answering "nothing
+ * stored", so SaveStore never overwrites a save it could not read (D47); a failed write rejects
+ * too (SaveStore turns both into a quiet `false`).
+ */
+export class BridgeStorageBackend implements StorageBackend {
+  constructor(private readonly api: BridgeStorageApi) {}
+
   async get(key: string): Promise<string | null> {
-    try {
-      const v: unknown = await bridge.storage.get(key, false);
-      if (v === null || v === undefined || v === '') return null;
-      return typeof v === 'string' ? v : JSON.stringify(v);
-    } catch {
-      return null;
-    }
+    const v: unknown = await this.api.get(key, false);
+    if (v === null || v === undefined || v === '') return null;
+    return typeof v === 'string' ? v : JSON.stringify(v);
   }
+
   async set(key: string, value: string): Promise<void> {
-    try {
-      await bridge.storage.set(key, value);
-    } catch {
-      // best effort; the SDK already tried its local fallback
-    }
+    await this.api.set(key, value);
   }
 }
 
@@ -245,7 +251,7 @@ function waitForAdEnd(
 }
 
 function realPlatform(): Platform {
-  const storage = new BridgeStorageBackend();
+  const storage = new BridgeStorageBackend(bridge.storage);
   let interstitialSupported = false;
   let rewardedSupported = false;
   let platformId = 'unknown';

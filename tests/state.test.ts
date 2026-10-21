@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseData, type HouseModel } from '../src/core/house';
-import { PlayState, type PlayEvent } from '../src/core/state';
+import { PlayState, type GhostStatus, type PlayEvent } from '../src/core/state';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import { Screen, view } from './support/screen';
 import { at, rowsHouse } from './support/houses';
@@ -19,6 +19,17 @@ const EXAMPLE = parseHouse(
   ),
 );
 const e = (r: number, c: number): number => at(5, r, c);
+
+/** A status event; `by` lists the ghosts that see it, `lamps` the lamps that light it (D48). */
+function st(
+  cell: number,
+  from: GhostStatus | null,
+  to: GhostStatus,
+  by: number[] = [],
+  lamps: number[] = [],
+): PlayEvent {
+  return { type: 'status', cell, from, to, by, lamps };
+}
 
 /** Four 2 × 2 rooms, no objects; a valid (not unique) solution, for ties and cascades. */
 const SQUARES = parseHouse({
@@ -78,7 +89,7 @@ describe('worked example 1 (GENERATOR.md §2): sight and light on the board', ()
     const ev = lone.tap(e(2, 2));
     expect(ev).toEqual([
       { type: 'placed', cell: e(2, 2), room: EXAMPLE.roomOf[e(2, 2)] },
-      { type: 'status', cell: e(2, 2), from: null, to: 'lit' },
+      st(e(2, 2), null, 'lit', [], [e(2, 0)]),
     ]);
     expect(lone.isSettled(EXAMPLE.roomOf[e(2, 2)] as number)).toBe(false);
   });
@@ -89,6 +100,28 @@ describe('worked example 1 (GENERATOR.md §2): sight and light on the board', ()
     s.tap(e(2, 4));
     expect([s.statusAt(e(2, 2)), s.statusAt(e(2, 4))]).toEqual(['seen', 'seen']);
   });
+
+  it('a status names the ghosts that see it (the dotted lines) and the lamps that light it', () => {
+    const s = new PlayState(EXAMPLE);
+    s.tap(e(2, 2));
+    // both stand in the lamp's row: seen by each other, lit by the lamp at (2,0) all the same
+    expect(s.tap(e(2, 4))).toEqual<PlayEvent[]>([
+      { type: 'placed', cell: e(2, 4), room: EXAMPLE.roomOf[e(2, 4)] as number },
+      st(e(2, 2), 'lit', 'seen', [e(2, 4)], [e(2, 0)]),
+      st(e(2, 4), null, 'seen', [e(2, 2)], [e(2, 0)]),
+    ]);
+    // a third ghost in a column with two others is seen by both
+    const col = new PlayState(EXAMPLE);
+    col.tap(e(0, 1));
+    col.tap(e(4, 1));
+    expect(col.tap(e(1, 1))).toContainEqual(st(e(1, 1), null, 'seen', [e(0, 1), e(4, 1)]));
+  });
+
+  it('a cell lit from two sides names both lamps', () => {
+    const h = parseHouse(rowsHouse(['AAB', 'CCB', 'CCB'], ['L..', '...', '..L']));
+    const s = new PlayState(h);
+    expect(s.tap(2)).toContainEqual(st(2, null, 'lit', [], [0, 8]));
+  });
 });
 
 describe('worked example 2 (GENERATOR.md §2): relocation and the given, house 1', () => {
@@ -96,14 +129,14 @@ describe('worked example 2 (GENERATOR.md §2): relocation and the given, house 1
     const s = H1();
     expect(s.tap(1)).toEqual<PlayEvent[]>([
       { type: 'placed', cell: 1, room: 1 },
-      { type: 'status', cell: 0, from: 'calm', to: 'seen' },
-      { type: 'status', cell: 1, from: null, to: 'seen' },
+      st(0, 'calm', 'seen', [1]),
+      st(1, null, 'seen', [0]),
       { type: 'unsettled', room: 0 },
     ]);
     expect(s.tap(3)).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 1, to: 3, room: 1 },
-      { type: 'status', cell: 0, from: 'seen', to: 'calm' },
-      { type: 'status', cell: 3, from: 'seen', to: 'calm' },
+      st(0, 'seen', 'calm'),
+      st(3, 'seen', 'calm'),
       { type: 'settled', room: 0 },
       { type: 'settled', room: 1 },
       { type: 'solved' },
@@ -137,7 +170,7 @@ describe('worked example 3 (GENERATOR.md §2): marks and undo, house 3', () => {
     expect(s.tap(9)).toEqual<PlayEvent[]>([
       { type: 'placed', cell: 9, room: 3 },
       { type: 'marked', cells: [9], on: false },
-      { type: 'status', cell: 9, from: null, to: 'calm' },
+      st(9, null, 'calm'),
       { type: 'settled', room: 3 },
     ]);
     expect(s.markedCells()).toEqual([8, 10]);
@@ -163,13 +196,13 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
     s.tap(4); // room A at (1,0)
     expect(s.tap(8)).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 4, to: 8, room: 0 },
-      { type: 'status', cell: 8, from: 'calm', to: 'calm' },
+      st(8, 'calm', 'calm'),
     ]);
     expect(s.tap(0)).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 8, to: 0, room: 0 },
       // (0,0) shares row 0 with the given at (0,3): both shiver, the given's room cools
-      { type: 'status', cell: 0, from: 'calm', to: 'seen' },
-      { type: 'status', cell: 3, from: 'calm', to: 'seen' },
+      st(0, 'calm', 'seen', [3]),
+      st(3, 'calm', 'seen', [0]),
       { type: 'unsettled', room: 0 },
       { type: 'unsettled', room: 1 },
     ]);
@@ -184,12 +217,12 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
     expect(s.tap(8)).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 4, to: 8, room: 0 },
       { type: 'marked', cells: [8], on: false },
-      { type: 'status', cell: 8, from: 'calm', to: 'calm' },
+      st(8, 'calm', 'calm'),
     ]);
     expect(s.undo()).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 8, to: 4, room: 0 },
       { type: 'marked', cells: [8], on: true },
-      { type: 'status', cell: 4, from: 'calm', to: 'calm' },
+      st(4, 'calm', 'calm'),
     ]);
     expect(s.markedCells()).toEqual([8]);
     expect(s.ghostCells()).toEqual([3, 4]);
@@ -200,7 +233,7 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
     s.tap(1);
     expect(s.tap(1)).toEqual<PlayEvent[]>([
       { type: 'removed', cell: 1, room: 1 },
-      { type: 'status', cell: 0, from: 'seen', to: 'calm' },
+      st(0, 'seen', 'calm'),
       { type: 'settled', room: 0 },
     ]);
     expect(s.ghostCells()).toEqual([0]);
@@ -223,7 +256,7 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
 
   it('a ghost may stand in the light (it squints); taps outside the board do nothing', () => {
     const s = new PlayState(EXAMPLE);
-    expect(s.tap(e(2, 1))[1]).toEqual({ type: 'status', cell: e(2, 1), from: null, to: 'lit' });
+    expect(s.tap(e(2, 1))[1]).toEqual(st(e(2, 1), null, 'lit', [], [e(2, 0)]));
     for (const bad of [-1, 25, 2.5, Number.NaN]) expect(s.tap(bad)).toEqual([]);
     expect(s.ghostCells()).toEqual([e(2, 1)]);
   });
@@ -240,9 +273,9 @@ describe('tap: placement, relocation within a full room, removal, nudges', () =>
     ]);
     expect(s.tap(5)).toEqual<PlayEvent[]>([
       { type: 'relocated', from: 0, to: 5, room: 0 },
-      { type: 'status', cell: 2, from: 'seen', to: 'calm' },
-      { type: 'status', cell: 5, from: 'seen', to: 'calm' },
-      { type: 'status', cell: 8, from: 'seen', to: 'calm' },
+      st(2, 'seen', 'calm'),
+      st(5, 'seen', 'calm'),
+      st(8, 'seen', 'calm'),
       { type: 'settled', room: 0 },
       { type: 'settled', room: 1 },
       { type: 'settled', room: 2 },
@@ -312,7 +345,7 @@ describe('undo (unlimited; every move kind, a hint included)', () => {
 
   it('undo events play back like any move (the screen ends equal to the rules)', () => {
     const s = H3();
-    const screen = new Screen(view(s));
+    const screen = new Screen(s.house, view(s));
     for (const m of [
       () => s.tap(4),
       () => s.tap(0),
@@ -377,8 +410,11 @@ describe('hint (GDD §3.1)', () => {
 describe('solved', () => {
   it('is announced once; afterwards the board ignores every move', () => {
     const s = H1();
+    expect(s.solvedAtStart).toBe(false);
     s.tap(3);
     expect(s.solved).toBe(true);
+    // solved by a move: the rules announced it, so it was not solved at the start
+    expect(s.solvedAtStart).toBe(false);
     const before = view(s);
     expect(s.tap(1)).toEqual([]);
     expect(s.tap(0)).toEqual([]);
@@ -419,10 +455,13 @@ describe('serialize and restore (the house in progress, GDD §9)', () => {
     expect(odd.ghostCells()).toEqual([3]);
   });
 
-  it('a restored solved board stays solved and takes no moves', () => {
+  it('a board restored already solved says so: no move will ever announce it (D49)', () => {
+    // a crash between the last move and the house-solved save leaves such a save behind
     const r = PlayState.restore(house(0), { ghosts: [3], marks: [] });
     expect(r.solved).toBe(true);
+    expect(r.solvedAtStart).toBe(true);
     expect(r.tap(1)).toEqual([]);
+    expect(PlayState.restore(house(0), { ghosts: [], marks: [] }).solvedAtStart).toBe(false);
   });
 
   it('ghosts on furniture or lamps are dropped', () => {

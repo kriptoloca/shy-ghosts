@@ -1,11 +1,13 @@
+import { RESUME_TAP_GRACE_MS } from '../config';
+
 /**
- * Taps are ignored for this long after a platform resume. Bridge 2.3.1 pauses the game when
- * its window loses focus and resumes it on focus (src/platform/bridge.ts); in a host page the
- * focus only comes back with the next tap inside the game, and on iOS Safari that tap reaches
- * Phaser after the resume, so it counted as a game tap (Peek & Find sandbox report 2026-10-18).
- * The tap that woke the game is never a game tap (CLAUDE.md rule 4).
+ * Taps are ignored for RESUME_TAP_GRACE_MS (src/config.ts) after a platform resume. Bridge 2.3.1
+ * pauses the game when its window loses focus and resumes it on focus (src/platform/bridge.ts); in
+ * a host page the focus only comes back with the next tap inside the game, and on iOS Safari that
+ * tap reaches Phaser after the resume, so it counted as a game tap (Peek & Find sandbox report
+ * 2026-10-18). The tap that woke the game is never a game tap (CLAUDE.md rule 4).
  */
-export const RESUME_TAP_GRACE_MS = 350;
+export { RESUME_TAP_GRACE_MS };
 
 /** The part of a Phaser scene the gate needs. */
 interface InputHost {

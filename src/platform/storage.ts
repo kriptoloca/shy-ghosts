@@ -1,5 +1,5 @@
-import { N_MAX } from '../core/house';
-import { withTimeout } from './timeout';
+import { HOUSE_N_MAX } from '../config';
+import { TimeoutError, withTimeout } from './timeout';
 
 /**
  * Save model and storage (GDD §9, CLAUDE.md rule 7). The backend is an interface: the Playgama
@@ -11,7 +11,7 @@ import { withTimeout } from './timeout';
 export const SAVE_VERSION = 1;
 export const SAVE_KEY = 'shy-ghosts:save';
 /** Cells of the largest house (9 × 9, GDD §3): every stored ghost and mark index is below it. */
-export const CELLS_MAX = N_MAX * N_MAX;
+export const CELLS_MAX = HOUSE_N_MAX * HOUSE_N_MAX;
 
 /** The house in progress (GDD §9): restored after a reload, the undo history is not (D21). */
 export interface HouseInProgress {
@@ -41,6 +41,11 @@ export interface SaveData {
   music: boolean;
 }
 
+/**
+ * Where the save lives. `get` resolves the stored string, or null when nothing is stored, and
+ * rejects when the store could not be read: an unread store is never taken for an empty one
+ * (D47). `set` rejects when the write failed.
+ */
 export interface StorageBackend {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
@@ -57,22 +62,25 @@ export class MemoryBackend implements StorageBackend {
   }
 }
 
-/** Browser localStorage; private mode or quota errors degrade to "nothing stored". */
+/**
+ * Browser localStorage (the dev and stub fallback). Blocked storage or a full quota rejects, so
+ * SaveStore treats the store as unread and never overwrites what it could not see.
+ */
 export class LocalStorageBackend implements StorageBackend {
   get(key: string): Promise<string | null> {
     try {
       return Promise.resolve(window.localStorage.getItem(key));
-    } catch {
-      return Promise.resolve(null);
+    } catch (e: unknown) {
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)));
     }
   }
   set(key: string, value: string): Promise<void> {
     try {
       window.localStorage.setItem(key, value);
-    } catch {
-      // ignore: saving is best effort
+      return Promise.resolve();
+    } catch (e: unknown) {
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)));
     }
-    return Promise.resolve();
   }
 }
 
@@ -130,12 +138,22 @@ function inProgress(v: unknown, house: number): HouseInProgress | null {
   };
 }
 
-/** Coerces whatever was stored into a valid SaveData; unknown or newer versions start fresh. */
+/** The save format version of a stored value: an integer ≥ 1, or null when it has none. */
+export function versionOf(raw: unknown): number | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const v = (raw as Record<string, unknown>).version;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : null;
+}
+
+/**
+ * Coerces whatever was stored into a valid v1 SaveData. Any version ≥ 1 is read for the v1
+ * fields, since every later version only adds fields (D31, D47); no version, or a broken one,
+ * starts fresh.
+ */
 export function migrate(raw: unknown): SaveData {
-  if (typeof raw !== 'object' || raw === null) return defaultSave();
-  const r = raw as Record<string, unknown>;
   const d = defaultSave();
-  if (int(r.version, 0) !== SAVE_VERSION) return d;
+  if (versionOf(raw) === null) return d;
+  const r = raw as Record<string, unknown>;
   const house = int(r.house, d.house, 1);
   return {
     version: SAVE_VERSION,
@@ -150,8 +168,8 @@ export function migrate(raw: unknown): SaveData {
 /** A host storage read that has not answered by then no longer holds Boot (and GameReady). */
 export const LOAD_TIMEOUT_MS = 4000;
 /**
- * A read that missed LOAD_TIMEOUT_MS is still awaited this long before the first save may write
- * without it (a storage that never answers would otherwise block every save of the session).
+ * A read that missed LOAD_TIMEOUT_MS is still awaited this long; then the store counts as unread,
+ * and each save reads again before it may write (D47).
  */
 export const LATE_READ_MAX_MS = 30_000;
 
@@ -179,11 +197,53 @@ export function mergeSaves(stored: SaveData, local: SaveData): SaveData {
   };
 }
 
+/** What a read of the store found. */
+type Found =
+  /** Nothing stored, or garbage nobody can read: the next save may write. */
+  { kind: 'blank' } | { kind: 'save'; data: SaveData; newer: boolean };
+
+function found(raw: string | null): Found {
+  if (raw === null || raw === '') return { kind: 'blank' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return { kind: 'blank' };
+  }
+  const version = versionOf(parsed);
+  if (version === null) return { kind: 'blank' };
+  return { kind: 'save', data: migrate(parsed), newer: version > SAVE_VERSION };
+}
+
+/** A read that settled in time, failed, or was still on its way. */
+type Outcome = { ok: true; found: Found } | { ok: false; timedOut: boolean };
+
+function settle(read: Promise<Found>, ms: number): Promise<Outcome> {
+  return withTimeout(read, ms).then(
+    (f): Outcome => ({ ok: true, found: f }),
+    (e: unknown): Outcome => ({ ok: false, timedOut: e instanceof TimeoutError }),
+  );
+}
+
+/**
+ * Where the stored save stands (D47):
+ * - `pending`: the first read missed LOAD_TIMEOUT_MS and is still on its way;
+ * - `known`: the store was read (a save, nothing, or garbage): saves write;
+ * - `newer`: a later version's save is stored: it is played from and never overwritten;
+ * - `unread`: the store could not be read: each save reads again first and writes only once a
+ *   read succeeds.
+ */
+type StoreState = 'pending' | 'known' | 'newer' | 'unread';
+
 export class SaveStore {
-  /** A first read that outlived LOAD_TIMEOUT_MS (null when the load answered in time). */
-  private lateRead: Promise<SaveData | null> | null = null;
-  /** The late read has finished; saves started from then on carry the merged progress. */
-  private lateSettled = false;
+  private state: StoreState = 'pending';
+  /** The first read that outlived LOAD_TIMEOUT_MS, still awaited (null otherwise). */
+  private late: Promise<SaveData | null> | null = null;
+  /** A read retried by a save after a failure, shared by the saves waiting on it. */
+  private retry: Promise<SaveData | null> | null = null;
+  /** A save that arrived after the boot (late or retried), for listeners that come later. */
+  private arrived: SaveData | null = null;
+  private readonly listeners = new Set<(stored: SaveData) => void>();
 
   constructor(
     private readonly backend: StorageBackend,
@@ -193,39 +253,57 @@ export class SaveStore {
   ) {}
 
   /**
-   * Never rejects and never hangs: a failure, an empty store or a timeout yields a fresh default
-   * save. After a timeout the read goes on; `late()` delivers it and `save()` merges with it.
+   * Never rejects and never hangs: the stored save (any version ≥ 1, read for its v1 fields), or
+   * a fresh default save when the store is empty, unreadable or slow. A slow read goes on and is
+   * merged when it lands (`onLateSave`); a failed one is retried by the next save. Neither is
+   * ever overwritten unread.
    */
   async load(): Promise<SaveData> {
     const read = this.read();
-    try {
-      return (await withTimeout(read, this.timeoutMs)) ?? defaultSave();
-    } catch {
-      this.lateRead = withTimeout(read, this.lateMaxMs).catch(() => null);
-      // Attached first, so it runs before any save waiting on the same read continues.
-      void this.lateRead.then(() => {
-        this.lateSettled = true;
-      });
+    const first = await settle(read, this.timeoutMs);
+    if (first.ok) return this.take(first.found) ?? defaultSave();
+    if (!first.timedOut) {
+      this.state = 'unread';
       return defaultSave();
     }
-  }
-
-  /** The stored save once a timed-out first read has finished; null when there is none. */
-  late(): Promise<SaveData | null> {
-    return this.lateRead ?? Promise.resolve(null);
+    this.state = 'pending';
+    this.late = settle(read, this.lateMaxMs).then((o) => this.arrive(o));
+    return defaultSave();
   }
 
   /**
-   * Never rejects: returns false when the backend failed. A save started while a late first read
-   * is still on its way waits for it and writes the merge (`mergeSaves`), so a slow store never
-   * loses the player's real progress to the fresh save Boot started with.
+   * `cb` gets the stored save when it arrives after the boot (a first read that missed the timeout,
+   * or one a save retried after a failure), so the running progress can merge it (furthest house
+   * wins). A save that already arrived is delivered at once. Returns the unsubscribe.
+   */
+  onLateSave(cb: (stored: SaveData) => void): () => void {
+    this.listeners.add(cb);
+    if (this.arrived) cb(this.arrived);
+    return () => {
+      this.listeners.delete(cb);
+    };
+  }
+
+  /**
+   * Never rejects: true when the save was written. Writes only over a store that was read: a save
+   * started while the first read is still on its way waits for it and writes the merge
+   * (`mergeSaves`); after a failed read it reads again first; over a newer version's save, or a
+   * store that still cannot be read, it writes nothing (D47).
    */
   async save(data: SaveData): Promise<boolean> {
     let out = data;
-    if (this.lateRead && !this.lateSettled) {
-      const stored = await this.lateRead;
+    if (this.state === 'pending' && this.late) {
+      const stored = await this.late;
+      if (stored) out = mergeSaves(stored, data);
+    } else if (this.state === 'unread') {
+      this.retry ??= settle(this.read(), this.timeoutMs).then((o) => {
+        this.retry = null;
+        return this.arrive(o);
+      });
+      const stored = await this.retry;
       if (stored) out = mergeSaves(stored, data);
     }
+    if (this.state !== 'known') return false;
     try {
       await this.backend.set(this.key, JSON.stringify(out));
       return true;
@@ -234,22 +312,32 @@ export class SaveStore {
     }
   }
 
-  async clear(): Promise<void> {
-    try {
-      await this.backend.set(this.key, '');
-    } catch {
-      // ignore
-    }
-  }
-
-  /** The stored save, or null when the store is empty, unreadable or holds garbage. */
-  private async read(): Promise<SaveData | null> {
-    try {
-      const raw = await this.backend.get(this.key);
-      if (!raw) return null;
-      return migrate(JSON.parse(raw) as unknown);
-    } catch {
+  /** Records what a read found; returns the stored save, if there is one. */
+  private take(f: Found): SaveData | null {
+    if (f.kind === 'blank') {
+      this.state = 'known';
       return null;
     }
+    this.state = f.newer ? 'newer' : 'known';
+    return f.data;
+  }
+
+  /** A read after the boot settled: a save is adopted and announced; a failure leaves it unread. */
+  private arrive(o: Outcome): SaveData | null {
+    if (!o.ok) {
+      this.state = 'unread';
+      return null;
+    }
+    const stored = this.take(o.found);
+    if (stored) {
+      this.arrived = stored;
+      for (const cb of this.listeners) cb(stored);
+    }
+    return stored;
+  }
+
+  /** What the store holds; rejects when the backend could not be read. */
+  private async read(): Promise<Found> {
+    return found(await this.backend.get(this.key));
   }
 }

@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import {
-  N_MAX,
-  N_MIN,
-  fromRows,
-  houseErrors,
-  parseHouse,
-  rotate,
-  sees,
-  type HouseData,
-} from '../src/core/house';
+import { HOUSE_N_MAX as N_MAX, HOUSE_N_MIN as N_MIN } from '../src/config';
+import { fromRows, houseErrors, parseHouse, rotate, sees, type HouseData } from '../src/core/house';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import { Rng } from '../src/gen/rng';
-import { bruteLit, bruteSees, bruteSolutions, isSolution, roomIds } from './support/brute';
+import {
+  bruteLamps,
+  bruteLit,
+  bruteSees,
+  bruteSolutions,
+  isSolution,
+  roomIds,
+} from './support/brute';
 import { at, randomHouse, rowsHouse } from './support/houses';
 
 /** GENERATOR.md §2 worked example 1: a 5 × 5 house; a bookshelf, a lamp, a bookshelf. */
@@ -190,13 +189,14 @@ describe('light (GDD §3: a lamp lights its row and column up to the first block
     expect(h.lit[at(5, 2, 2)]).toBe(false);
   });
 
-  it('equals a brute-force walk on 300 random houses; candidates are the empty unlit cells', () => {
+  it('equals a brute-force walk on 300 random houses (the lamps too); candidates are empty, unlit', () => {
     const rng = new Rng(4);
     for (let k = 0; k < 300; k++) {
       const d = randomHouse(rng, 2, 9);
       const h = parseHouse(d);
       for (let i = 0; i < h.size; i++) {
         expect(h.lit[i]).toBe(bruteLit(d.n, d.objects, i));
+        expect(h.lampsOf[i]).toEqual(bruteLamps(d.n, d.objects, i));
         expect(h.candidate[i]).toBe(d.objects[i] === '.' && !bruteLit(d.n, d.objects, i));
       }
     }

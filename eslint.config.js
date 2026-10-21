@@ -59,16 +59,8 @@ export default tseslint.config(
           patterns: [
             { group: ['phaser/*', '@playgama/*'], message: 'Keep the pure modules engine-free.' },
             {
-              group: [
-                '**/game/**',
-                '**/platform/**',
-                '**/dev/**',
-                '**/main',
-                '**/main.ts',
-                '**/config',
-                '**/config.ts',
-              ],
-              message: 'Pure modules import only core/, gen/ and data/.',
+              group: ['**/game/**', '**/platform/**', '**/dev/**', '**/main', '**/main.ts'],
+              message: 'Pure modules import only core/, gen/, data/ and config.ts.',
             },
             {
               group: ['node:*', 'crypto', 'perf_hooks', 'timers', 'timers/*', 'os', 'process'],
@@ -98,6 +90,17 @@ export default tseslint.config(
         { name: 'globalThis', message: 'Reach nothing through the global object here.' },
         { name: 'self', message: 'Reach nothing through the global object here.' },
         { name: 'process', message: 'The pure modules run anywhere.' },
+      ],
+    },
+  },
+  {
+    // The constants file (CLAUDE.md: constants live in config.ts, feel.ts and params.ts) is read by
+    // the pure modules too, so it imports nothing: the rules stay pure through it.
+    files: ['src/config.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['*', '**'], message: 'config.ts holds plain constants only.' }] },
       ],
     },
   },

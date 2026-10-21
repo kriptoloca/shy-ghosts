@@ -31,6 +31,7 @@ Source of truth read on 2026-10-16: the SDK repository `github.com/Playgama/brid
 
 ## Storage module
 - `bridge.storage.get(key, tryParseJson)` and `bridge.storage.set(key, value)` [modules/storage/StorageModule.ts]. We pass `tryParseJson = false` and store the save as a JSON string under one key, which the YouTube adapter folds into `ytgame.game.saveData` / `loadData` [YoutubePlatformBridge.ts]. On the mock platform the module writes localStorage itself. Calls before `initialize()` throw `SDK_NOT_INITIALIZED`, so BootScene initialises the bridge first.
+- Our `BridgeStorageBackend` lets a failed `get` reject instead of answering "nothing stored", and `SaveStore` never writes over a store it could not read or over a newer version's save; it reads again before the next write (docs/questions.md D47, audit 2026-10-21).
 
 ## Our wrapper (`src/platform/bridge.ts`)
 - Lifecycle around the pause sheet (GDD §11, Epic 6): `gameplay_stopped` when the sheet opens on a house in play, `gameplay_started` on resume; the platform pause keeps its own path (`onPause`), and a platform resume over the open sheet leaves the game frozen.

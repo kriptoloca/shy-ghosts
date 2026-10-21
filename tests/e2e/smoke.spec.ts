@@ -1,5 +1,14 @@
 import { expect } from '@playwright/test';
-import { CANVAS, TEST, platformPause, test, waitState } from './helpers';
+import {
+  CANVAS,
+  DEV_ONLY,
+  TEST,
+  platformPause,
+  recordSdkMessages,
+  shippedFiles,
+  test,
+  waitState,
+} from './helpers';
 
 /**
  * Epic 0: boot goes straight into the Game (no title screen), GameReady goes out once and only
@@ -48,18 +57,22 @@ test('a platform pause turns input off; it returns after the resume grace', asyn
   await waitState(page, (s) => s.input, 'input back after the grace');
 });
 
-test('the production build carries no debug hooks', async ({ page, request }) => {
+test('the production build carries no debug hooks or dev code in any shipped file', async ({
+  page,
+  request,
+}) => {
+  await recordSdkMessages(page);
   await page.goto('./', { waitUntil: 'load' });
-  await page.waitForTimeout(3000);
+  // no hooks to ask in production: wait for the SDK's own record that GameReady went out, i.e.
+  // the Game is interactive and would have installed its hooks by now
+  await expect
+    .poll(() => page.evaluate(() => window.__sdkMessages ?? []), { timeout: 30_000 })
+    .toContain('game_ready');
   expect(await page.evaluate(() => typeof window.__ghostDebug)).toBe('undefined');
-  // nor their code, nor the dev URL parameters: the shipped scripts never mention them
-  const html = await (await request.get('./')).text();
-  const scripts = [...html.matchAll(/src="\.\/(assets\/[^"]+\.js)"/g)].map((m) => m[1] ?? '');
-  expect(scripts.length).toBeGreaterThan(0);
-  for (const src of scripts) {
-    const js = await (await request.get(`./${src}`)).text();
-    for (const dev of ['__ghostDebug', 'fpsmin', 'playtest', 'fakeads']) {
-      expect(js, `${src} mentions ${dev}`).not.toContain(dev);
-    }
+  // nor their code, nor the dev URL parameters, in any file the production build ships
+  const files = await shippedFiles(request);
+  expect(files.some(([path]) => path.startsWith('assets/'))).toBe(true);
+  for (const [path, text] of files) {
+    for (const dev of DEV_ONLY) expect(text, `${path} mentions ${dev}`).not.toContain(dev);
   }
 });

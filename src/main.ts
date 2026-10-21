@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLOR_PAGE_CSS } from './config';
+import { COLOR_PAGE_CSS, ORIENTATION_RECHECK_MS } from './config';
 import { designSize } from './game/layout';
 import { BootScene } from './game/scenes/BootScene';
 import { GameScene } from './game/scenes/GameScene';
@@ -64,7 +64,6 @@ function onViewportChange(): void {
 window.addEventListener('resize', onViewportChange);
 window.visualViewport?.addEventListener('resize', onViewportChange);
 window.addEventListener('orientationchange', () => {
-  // iOS reports the old size for a frame or two after rotation.
-  window.setTimeout(onViewportChange, 60);
-  window.setTimeout(onViewportChange, 300);
+  // iOS reports the old size for a frame or two after rotation: read it again a little later.
+  for (const ms of ORIENTATION_RECHECK_MS) window.setTimeout(onViewportChange, ms);
 });

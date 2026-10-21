@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseData, type HouseModel } from '../src/core/house';
 import { PlayState, type PlayEvent } from '../src/core/state';
 import { Rng } from '../src/gen/rng';
-import { bruteStatus } from './support/brute';
+import { bruteLamps, bruteSees, bruteStatus } from './support/brute';
 import { randomHouse } from './support/houses';
 import { Screen, view, type View } from './support/screen';
 
@@ -99,7 +99,7 @@ describe('rules: properties over 2,000 random houses', () => {
     () => {
       for (const { h, moves } of cases(77)) {
         const s = new PlayState(h);
-        const screen = new Screen(view(s));
+        const screen = new Screen(s.house, view(s));
         const problems: string[] = [];
         for (const m of moves) {
           const ev = apply(s, m);
@@ -149,8 +149,17 @@ describe('rules: properties over 2,000 random houses', () => {
         };
         check();
         for (const m of moves) {
-          apply(s, m);
+          const ev = apply(s, m);
           check();
+          // a status names exactly the ghosts that see it and the lamps that light it (D48)
+          const ghosts = s.ghostCells();
+          for (const e of ev) {
+            if (e.type !== 'status') continue;
+            const by = ghosts.filter((g) => bruteSees(d.n, d.objects, e.cell, g));
+            if (e.by.join() !== by.join()) problems.push(`by of ${String(e.cell)}`);
+            const lamps = bruteLamps(d.n, d.objects, e.cell);
+            if (e.lamps.join() !== lamps.join()) problems.push(`lamps of ${String(e.cell)}`);
+          }
         }
         expect(problems).toEqual([]);
       }

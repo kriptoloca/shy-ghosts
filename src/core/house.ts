@@ -4,22 +4,14 @@
  * for the houses after 1000. Pure: no engine, no clock, no randomness.
  */
 
+import { HOUSE_N_MAX, HOUSE_N_MIN, QUARTER_TURNS, ROOM_ID_RADIX, ROOM_MIN_CELLS } from '../config';
+
 /** What a cell holds (GENERATOR.md §1.1 `objects`): empty, furniture or a lamp. */
 export type CellObject = '.' | 'F' | 'L';
 
-/** Smallest and largest side of a house (GDD §3: N = 2 … 9). */
-export const N_MIN = 2;
-export const N_MAX = 9;
-/** Room ids are written in base 36 (GENERATOR.md §1.1), so a house has at most 36 rooms. */
-export const ROOM_ID_RADIX = 36;
-/** Every room has at least this many cells (GDD §3). */
-export const ROOM_MIN_CELLS = 2;
-/** Turns that bring a house back to where it started. */
-export const QUARTER_TURNS = 4;
-
 /** The stored fields the rules read (GENERATOR.md §1.1; the full record adds grade, role, …). */
 export interface HouseData {
-  /** Side length (N_MIN … N_MAX). */
+  /** Side length (HOUSE_N_MIN … HOUSE_N_MAX). */
   n: number;
   /** n² characters: the room id of each cell in base 36, canonical (GENERATOR.md §1.2). */
   rooms: string;
@@ -62,6 +54,8 @@ export interface HouseModel {
   readonly segments: readonly Segment[];
   /** Reached by a lamp's light. */
   readonly lit: readonly boolean[];
+  /** The lamps whose light reaches each cell, ascending (empty for unlit and blocked cells). */
+  readonly lampsOf: readonly (readonly number[])[];
   /** The cells each cell sees, ascending (its row and column segment without itself). */
   readonly sees: readonly (readonly number[])[];
   /** Empty and unlit: where a solution ghost can stand. */
@@ -127,8 +121,8 @@ function connected(n: number, cells: readonly number[]): boolean {
  */
 export function houseErrors(d: HouseData): string[] {
   const errors: string[] = [];
-  if (!Number.isInteger(d.n) || d.n < N_MIN || d.n > N_MAX) {
-    return [`size: n = ${String(d.n)} is outside ${String(N_MIN)}…${String(N_MAX)}`];
+  if (!Number.isInteger(d.n) || d.n < HOUSE_N_MIN || d.n > HOUSE_N_MAX) {
+    return [`size: n = ${String(d.n)} is outside ${String(HOUSE_N_MIN)}…${String(HOUSE_N_MAX)}`];
   }
   const size = d.n * d.n;
   if (typeof d.rooms !== 'string' || d.rooms.length !== size) {
@@ -218,19 +212,21 @@ export function parseHouse(d: HouseData): HouseModel {
     }
   }
 
-  const lit = new Array<boolean>(size).fill(false);
+  const lampsOf: number[][] = Array.from({ length: size }, () => []);
   objects.forEach((o, i) => {
     if (o !== 'L') return;
     for (const [dr, dc] of STEPS) {
       let r = Math.floor(i / n) + dr;
       let c = (i % n) + dc;
       while (r >= 0 && r < n && c >= 0 && c < n && !blocked[r * n + c]) {
-        lit[r * n + c] = true;
+        lampsOf[r * n + c]?.push(i);
         r += dr;
         c += dc;
       }
     }
   });
+  // lamps are visited in reading order, so each list is already ascending
+  const lit = lampsOf.map((lamps) => lamps.length > 0);
 
   const sees = Array.from({ length: size }, (_, i) => {
     if (blocked[i]) return [];
@@ -251,6 +247,7 @@ export function parseHouse(d: HouseData): HouseModel {
     colSeg,
     segments,
     lit,
+    lampsOf,
     sees,
     candidate: objects.map((o, i) => o === '.' && !lit[i]),
     givens: [...d.givens].sort((a, b) => a - b),

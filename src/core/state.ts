@@ -21,7 +21,16 @@ export type PlayEvent =
   /** A tap on furniture, a lamp or a given, or on a given's room: `cell` is what nudges. */
   | { type: 'nudged'; cell: number }
   | { type: 'marked'; cells: number[]; on: boolean }
-  | { type: 'status'; cell: number; from: GhostStatus | null; to: GhostStatus }
+  | {
+      type: 'status';
+      cell: number;
+      from: GhostStatus | null;
+      to: GhostStatus;
+      /** The ghosts that see this one after the move, ascending (the dotted lines, GDD §3a). */
+      by: number[];
+      /** The lamps whose light reaches it, ascending (their cells flash, GDD §3a; D48). */
+      lamps: number[];
+    }
   | { type: 'settled'; room: number }
   | { type: 'unsettled'; room: number }
   | { type: 'solved' };
@@ -39,9 +48,6 @@ type Change =
   | { kind: 'remove'; cell: number; room: number }
   | { kind: 'mark'; cells: readonly number[]; on: boolean };
 
-/** No ghost in the room. */
-const NO_GHOST = -1;
-
 /**
  * The play state of one house (GDD §3, GENERATOR.md §2): the ghost of each room (one at most),
  * the givens, the marks, the undo history, and what follows from them (each ghost's state, the
@@ -49,8 +55,8 @@ const NO_GHOST = -1;
  * plays them back. Once solved, the board takes no more moves.
  */
 export class PlayState {
-  /** The cell of each room's ghost, or NO_GHOST. */
-  private readonly ghost: number[];
+  /** The cell of each room's ghost, or null. */
+  private readonly ghost: (number | null)[];
   /** The room's ghost is a given (it never moves). */
   private readonly given: boolean[];
   private readonly mark: boolean[];
@@ -58,9 +64,10 @@ export class PlayState {
   private status: (GhostStatus | null)[];
   private settled: boolean[];
   private readonly history: Change[] = [];
+  private startedSolved: boolean;
 
   constructor(readonly house: HouseModel) {
-    this.ghost = new Array<number>(house.roomCount).fill(NO_GHOST);
+    this.ghost = new Array<number | null>(house.roomCount).fill(null);
     this.given = new Array<boolean>(house.roomCount).fill(false);
     this.mark = new Array<boolean>(house.size).fill(false);
     for (const g of house.givens) {
@@ -70,13 +77,15 @@ export class PlayState {
     }
     this.status = this.computeStatus();
     this.settled = this.computeSettled();
+    this.startedSolved = this.solved;
   }
 
   /**
    * A house in progress from its save (GDD §9): the player's ghosts and the marks, without the
    * undo history (D21). Never throws: anything that does not fit the house is left out (a ghost
    * off the board, on furniture or a lamp, in a given's room or in a room already holding one,
-   * the lower cell first; a mark off the board or under a ghost).
+   * the lower cell first; a mark off the board or under a ghost). A save written between the last
+   * move and the house-solved save restores a solved board: see `solvedAtStart`.
    */
   static restore(house: HouseModel, save: Partial<BoardSave> | null | undefined): PlayState {
     const s = new PlayState(house);
@@ -86,11 +95,12 @@ export class PlayState {
         : [];
     for (const c of cells(save?.ghosts)) {
       const room = house.roomOf[c] as number;
-      if (!house.blocked[c] && s.ghost[room] === NO_GHOST) s.ghost[room] = c;
+      if (!house.blocked[c] && s.ghost[room] === null) s.ghost[room] = c;
     }
     for (const c of cells(save?.marks)) if (s.canMark(c)) s.mark[c] = true;
     s.status = s.computeStatus();
     s.settled = s.computeSettled();
+    s.startedSolved = s.solved;
     return s;
   }
 
@@ -101,19 +111,26 @@ export class PlayState {
     return this.settled.every(Boolean);
   }
 
+  /**
+   * The board was solved before any move (a restored save, D49): the rules will never announce
+   * `solved` for it, so the scene plays the win (or moves on) by itself.
+   */
+  get solvedAtStart(): boolean {
+    return this.startedSolved;
+  }
+
   get canUndo(): boolean {
     return !this.solved && this.history.length > 0;
   }
 
   /** The cell of the room's ghost, or null. */
   ghostOf(room: number): number | null {
-    const g = this.ghost[room];
-    return g === undefined || g === NO_GHOST ? null : g;
+    return this.ghost[room] ?? null;
   }
 
   /** Every ghost on the board, givens included, ascending. */
   ghostCells(): number[] {
-    return this.ghost.filter((g) => g !== NO_GHOST).sort((a, b) => a - b);
+    return this.ghost.filter((g): g is number => g !== null).sort((a, b) => a - b);
   }
 
   isGiven(cell: number): boolean {
@@ -148,7 +165,7 @@ export class PlayState {
   serialize(): { ghosts: number[]; marks: number[] } {
     return {
       ghosts: this.ghost
-        .filter((g, room) => g !== NO_GHOST && !this.given[room])
+        .filter((g, room): g is number => g !== null && !this.given[room])
         .sort((a, b) => a - b),
       marks: this.markedCells(),
     };
@@ -165,13 +182,13 @@ export class PlayState {
     if (this.solved || !this.isCell(cell)) return [];
     if (this.house.blocked[cell]) return [{ type: 'nudged', cell }];
     const room = this.house.roomOf[cell] as number;
-    const g = this.ghost[room] as number;
+    const g = this.ghost[room] ?? null;
     const unmarked = this.isMarked(cell);
     if (g === cell) {
       if (this.given[room]) return [{ type: 'nudged', cell }];
       return this.record({ kind: 'remove', cell, room });
     }
-    if (g === NO_GHOST) return this.record({ kind: 'place', cell, room, unmarked });
+    if (g === null) return this.record({ kind: 'place', cell, room, unmarked });
     if (this.given[room]) return [{ type: 'nudged', cell: g }];
     return this.record({ kind: 'relocate', from: g, to: cell, room, unmarked });
   }
@@ -206,10 +223,7 @@ export class PlayState {
   /** The hint (GDD §3.1, `hintStep`), applied as a move: undo takes it back like any other. */
   hint(): PlayEvent[] {
     if (this.solved) return [];
-    const step = hintStep(
-      this.house,
-      this.ghost.map((g) => (g === NO_GHOST ? null : g)),
-    );
+    const step = hintStep(this.house, this.ghost);
     if (!step) return [];
     const room = this.house.roomOf[step.cell] as number;
     if (step.kind === 'remove') {
@@ -250,16 +264,21 @@ export class PlayState {
     const events = change();
     this.status = this.computeStatus();
     this.settled = this.computeSettled();
+    const occupied = new Set(this.ghostCells());
     const changed: { cell: number; from: GhostStatus | null; to: GhostStatus }[] = [];
     this.ghost.forEach((now, room) => {
-      if (now === NO_GHOST) return;
-      const was = ghostBefore[room] as number;
-      const from = was === NO_GHOST ? null : (statusBefore[was] ?? null);
+      if (now === null) return;
+      const was = ghostBefore[room] ?? null;
+      const from = was === null ? null : (statusBefore[was] ?? null);
       const to = this.status[now] as GhostStatus;
       if (was !== now || from !== to) changed.push({ cell: now, from, to });
     });
     changed.sort((a, b) => a.cell - b.cell);
-    for (const c of changed) events.push({ type: 'status', ...c });
+    for (const c of changed) {
+      const by = (this.house.sees[c.cell] ?? []).filter((x) => occupied.has(x));
+      const lamps = [...(this.house.lampsOf[c.cell] ?? [])];
+      events.push({ type: 'status', ...c, by, lamps });
+    }
     this.settled.forEach((on, room) => {
       if (on !== settledBefore[room]) events.push({ type: on ? 'settled' : 'unsettled', room });
     });
@@ -279,7 +298,7 @@ export class PlayState {
           ...this.unmark(c.unmarked, c.to),
         ];
       case 'remove':
-        this.ghost[c.room] = NO_GHOST;
+        this.ghost[c.room] = null;
         return [{ type: 'removed', cell: c.cell, room: c.room }];
       case 'mark':
         for (const cell of c.cells) this.mark[cell] = c.on;
@@ -290,7 +309,7 @@ export class PlayState {
   private revert(c: Change): PlayEvent[] {
     switch (c.kind) {
       case 'place':
-        this.ghost[c.room] = NO_GHOST;
+        this.ghost[c.room] = null;
         return [
           { type: 'removed', cell: c.cell, room: c.room },
           ...this.remark(c.unmarked, c.cell),
@@ -327,10 +346,10 @@ export class PlayState {
   private computeStatus(): (GhostStatus | null)[] {
     const h = this.house;
     const occupied = new Array<boolean>(h.size).fill(false);
-    for (const g of this.ghost) if (g !== NO_GHOST) occupied[g] = true;
+    for (const g of this.ghost) if (g !== null) occupied[g] = true;
     const out = new Array<GhostStatus | null>(h.size).fill(null);
     for (const g of this.ghost) {
-      if (g === NO_GHOST) continue;
+      if (g === null) continue;
       const seen = (h.sees[g] ?? []).some((c) => occupied[c]);
       out[g] = seen ? 'seen' : h.lit[g] ? 'lit' : 'calm';
     }
@@ -338,6 +357,6 @@ export class PlayState {
   }
 
   private computeSettled(): boolean[] {
-    return this.ghost.map((g) => g !== NO_GHOST && this.status[g] === 'calm');
+    return this.ghost.map((g) => g !== null && this.status[g] === 'calm');
   }
 }

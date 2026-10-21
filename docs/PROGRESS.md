@@ -4,12 +4,12 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-Epic 1 built (core rules), left uncommitted in the working tree for its review and audit
-(together with Epic 0's) · Epic 0 committed (`e5161dc`) · Next: the audit, then
-`feat(epic-1)`, then Epic 2 · Last update: 2026-10-21 · Branch: `main` (local, no remote)
-Repo: `kriptoloca/shy-ghosts`, not created yet (Hasan's step 1). Munch Pixels is paused
-(munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the core loop had no real
-decisions; this plan builds that lesson in as the fun gate (CLAUDE.md, docs/questions.md D1).
+Epics 0–1 done and pushed (`kriptoloca/shy-ghosts`, `main` at `fa66f51`); the audit's findings are
+fixed in `fix(epic-1): audit findings` (local, the main session pushes) · Next: Epic 2 (content
+pipeline) → Gate A · Last update: 2026-10-21 · Branch: `main`
+Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
+core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
+docs/questions.md D1).
 
 ## How the team works (every epic)
 1. **Coder**, the only writer: one epic at a time, tasks in order. Each task starts with its red
@@ -117,9 +117,9 @@ Done when: every row green; `npm run size` reports the initial download against 
 grep is clean; `code-review` and the audit have no open KRİTİK or YÜKSEK; this file updated;
 `feat(epic-0): …` committed on `main` (pushed once the repository exists).
 
-## Session plan (Epic 1 — core rules, `src/core`) — built 2026-10-21, in review
-Baseline: `e5161dc feat(epic-0)`. Left uncommitted for the auditor; the main session commits
-`feat(epic-1): …` once the review and the audit have no open KRİTİK or YÜKSEK.
+## Session plan (Epic 1 — core rules, `src/core`) — done 2026-10-21 (`fa66f51`, audit fixes in `fix(epic-1)`)
+Baseline: `e5161dc feat(epic-0)`. Committed by the main session as `fa66f51` after the audit
+(no KRİTİK or YÜKSEK); the ORTA and DÜŞÜK findings are fixed in `fix(epic-1): audit findings`.
 
 Tasks, in order (each started with its red test, each ended with `npm test` and `npm run check`
 green):
@@ -157,8 +157,8 @@ AC → test (TASKS.md Epic 1):
 ## Epic board
 | Epic / gate | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| 0 | Scaffold, pipeline, platform shell | done (review and audit folded into Epic 1's) | `feat(epic-0)` on `main`; 25 unit tests (5 files) + 4 e2e green; check clean; build 1.46 MB (target 5 MB); audit-dist OK |
-| 1 | Core rules (`src/core`) | built, uncommitted, awaiting review and audit | 64 new unit tests (89 in all, 11 files) incl. 5 property tests over 2,000 random houses; worked examples 1–3 with exact events; check clean; build and 4 e2e green |
+| 0 | Scaffold, pipeline, platform shell | done, audited, pushed (`e5161dc`); CI and Pages green | 25 unit tests (5 files) + 4 e2e; check clean; build 1.46 MB (target 5 MB); audit-dist OK |
+| 1 | Core rules (`src/core`) | done, audited (0 KRİTİK, 0 YÜKSEK, 2 ORTA, 9 DÜŞÜK), pushed (`fa66f51`); findings fixed in `fix(epic-1)` | 124 unit tests (16 files) incl. 5 property tests over 2,000 random houses; the auditor's oracle: 488,915 moves on 16,000 houses, 0 mismatches; 4 e2e |
 | 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | planned | |
 | **Gate A** | GENERATOR.md §9, A1–A9 | not run | |
 | 3 | Layout and graybox loop (M1) | planned | |
@@ -195,28 +195,44 @@ The plan's prototype numbers, which set Gate A's thresholds, are in GENERATOR.md
 re-measures them with the real code here ("Measured (Epic 2)").
 
 ## Reviews and audits
-None yet: Epic 0's `code-review` and adversarial audit are folded into Epic 1's. The auditor
-reviews `git diff a2b713a` (the Epic 0 commit plus the Epic 1 working tree) against GDD.md,
-GENERATOR.md and CLAUDE.md.
+### Epics 0–1, independent audit (2026-10-21)
+Verdict: pass, 0 KRİTİK, 0 YÜKSEK. The auditor's own oracle (written from GDD §3 and D21–D46,
+its own generator and grid walks) agreed with `PlayState` event for event on 488,915 moves over
+16,000 houses; restore matched D46 on 3,000 junk saves. Findings and their fixes
+(`fix(epic-1): audit findings`, each with its test written first and seen failing):
+
+| # | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| ORTA 1 | An unreadable or newer save was taken for no save and overwritten | D47: v1 fields read from any version ≥ 1; a failed `get` rejects; `SaveStore` states read / newer / pending / unread; no write before a read, none over a newer save, a retried read before writing after a failure | `tests/storage.test.ts` (17: newer save, failed read then retry, late newer, late failure, Bridge backend) |
+| ORTA 2 | The model screen missed 5 of 6 faults planted in the rules | D52: strict `Screen` (house-aware: rooms, marks, nudges, phases, required and spurious states, lit rooms, win) | the planted faults (scratch harness): before 1 of 6 caught by the property tests, after 6 of 6, each by the screen test alone; `tests/screen.test.ts` (8) pins each reason |
+| DÜŞÜK 3 | The ZIP's SHA differed by time zone | local-midnight `FIXED_MTIME` | `tests/zip.test.ts` (UTC, Europe/Istanbul, America/Los_Angeles) |
+| DÜŞÜK 4 | `//host` links passed the audit; a path with a space or "ü" crashed it | protocol-relative pattern; `fileURLToPath` in `audit-dist.mjs` and `size.mjs` | `tests/scripts.test.ts` (3, run from "Shy Ghosts ü") |
+| DÜŞÜK 5 | The production smoke scanned only the scripts index.html names and slept 3 s | scans every shipped file on disk (crawls when live); polls the SDK's `platform_message_sent` for GameReady | smoke.spec (a planted stray chunk fails it) |
+| DÜŞÜK 6 | A board restored solved stalls the scene | D49: `solvedAtStart` | state.test |
+| DÜŞÜK 7 | Status events named neither the other ghost nor the lamp | D48: `by`, `lamps` (`lampsOf` in the house model) | state.test, house.test and core-props (brute force) |
+| DÜŞÜK 8 | Nothing kept Epic 3 from writing a slot for the wrong house or moving the house back | D50: `recordHouseInProgress`, `advanceHouse` (`Math.max`), `persistProgress` drops a stale slot | `tests/progress.test.ts` (3) |
+| DÜŞÜK 9–10 | Pages publishes `/test/` before the gates; `.claude/` hooks do not load from /home/user | left as they are, on the main session's word | — |
+| DÜŞÜK 11 | Constants outside config.ts, unnamed iOS delays, no Boot re-layout | D51: moved to `src/config.ts`, named, Boot lays out on RESIZE | `tests/source-rules.test.ts` (11; red on the committed sources) |
 
 ## Hasan's steps (outside the code)
-- [ ] Create the GitHub repository `kriptoloca/shy-ghosts` (public, like the others) and give the
-      Claude GitHub App access to it. Until then everything stays local on `main`.
+- [x] Create the GitHub repository `kriptoloca/shy-ghosts` and give the Claude GitHub App access
+      (done 2026-10-21; `main` pushed through `fa66f51`; CI and the Pages workflow ran green on
+      Epic 0, per the main session).
 - [ ] Switch on GitHub Pages once the first build exists (after Epic 0 is pushed): Settings →
       Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
 
 ## Next steps (in order)
-1. Auditor: `code-review` and the adversarial audit of Epics 0 and 1; the coder closes every
-   KRİTİK and YÜKSEK red-first; then the main session commits `feat(epic-1): core rules …`.
-2. Epic 2 (content pipeline: solver, grader, players, generator, 1,000 houses + 792 dailies) →
-   **Gate A**. The rules' `parseHouse`, `sees`, `rotate`, `canonicalIds` and `fromRows` are
-   ready for it; `tests/support/brute.ts` has a brute-force solution counter to check the
-   solver against.
-3. Epic 3 (graybox loop) → **Gate B**. The scene plays `PlayEvent` lists back (D41); the model
-   screen in `tests/support/screen.ts` is the reference for the e2e that compares the settled
-   screen with the rules.
-4. Both gates passed: graybox screenshots to Hasan, then the `/test/` link; Epic 4 starts. A gate
+1. Epic 2 (content pipeline: solver, grader, players, generator, 1,000 houses + 792 dailies) →
+   **Gate A**.
+2. Epic 3 (graybox loop) → **Gate B**. Carried over from the Epic 1 audit:
+   - after every restore, check `PlayState.solvedAtStart` and play the win (or move on) yourself:
+     no `solved` event will come (D49);
+   - change the save only through `recordHouseInProgress` and `advanceHouse` (D50);
+   - draw the seen lines from `status.by` and flash the lamps in `status.lamps` (D48);
+   - the screen e2e compares the scene with the strict model screen of
+     `tests/support/screen.ts` (D52).
+3. Both gates passed: graybox screenshots to Hasan, then the `/test/` link; Epic 4 starts. A gate
    still failing after two tune rounds: stop, and Hasan gets the gate report with a
    recommendation (CLAUDE.md, the fun gate).
-5. Open, not blocking before Epic 4: Hasan's answer on pace or depth (docs/questions.md, Open
+4. Open, not blocking before Epic 4: Hasan's answer on pace or depth (docs/questions.md, Open
    questions).

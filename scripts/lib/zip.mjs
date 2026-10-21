@@ -14,8 +14,12 @@ export const TOTAL_TARGET = 15 * 1024 * 1024;
 export const FORBIDDEN_EXT = /\.(gz|br|zip)$/i;
 /** Top-level folders of dist/ that never ship: the development build published at /test/. */
 export const EXCLUDED_DIRS = ['test'];
-/** Every entry gets this timestamp, so the same tree gives the same bytes on every machine. */
-export const FIXED_MTIME = new Date('2026-01-01T00:00:00Z');
+/**
+ * Every entry gets this timestamp, so the same tree gives the same bytes on every machine. A ZIP
+ * stores local wall-clock time (fflate reads the Date's local fields), so this is local midnight:
+ * a UTC moment would be written as a different wall clock in every time zone (audit 2026-10-21).
+ */
+export const FIXED_MTIME = new Date(2026, 0, 1);
 
 /**
  * Files under `root` as sorted, slash-separated relative paths; EXCLUDED_DIRS and dotfiles

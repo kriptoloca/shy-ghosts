@@ -36,6 +36,28 @@ export function bruteLit(n: number, objects: string, i: number): boolean {
   return false;
 }
 
+/** The lamps whose light reaches cell `i`: in each direction, the first object met, if a lamp. */
+export function bruteLamps(n: number, objects: string, i: number): number[] {
+  if (objects[i] !== '.') return [];
+  const r0 = Math.floor(i / n);
+  const c0 = i % n;
+  const out: number[] = [];
+  for (const [dr, dc] of DIRS) {
+    let r = r0 + dr;
+    let c = c0 + dc;
+    while (r >= 0 && r < n && c >= 0 && c < n) {
+      const o = objects[r * n + c];
+      if (o !== '.') {
+        if (o === 'L') out.push(r * n + c);
+        break;
+      }
+      r += dr;
+      c += dc;
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
 /** Two different empty-kind cells see each other: same row or column, nothing blocked between. */
 export function bruteSees(n: number, objects: string, a: number, b: number): boolean {
   if (a === b || objects[a] !== '.' || objects[b] !== '.') return false;

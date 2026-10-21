@@ -220,6 +220,56 @@ brief's generator, grader and two player models measured the numbers behind D6�
   `src/data/tutorial.ts` stores each tutorial solution as GDD §3.3 lists it; the build (Epic 2)
   derives it again with the solver, and Gate A compares the two (A5). Rests on GDD §9 and D21.
 
+## 2026-10-21 (Epic 1 audit fixes: coder)
+
+The independent audit of Epics 0–1 (0 KRİTİK, 0 YÜKSEK, 2 ORTA, 9 DÜŞÜK; its own oracle agreed
+with the rules on 488,915 moves) and the main session's instructions behind these decisions.
+
+- **D47 A save that could not be read is never overwritten** (audit ORTA 1). `migrate` reads the
+  v1 fields from any integer version ≥ 1, since every later version only adds fields (D31); a
+  missing, broken or fractional version is garbage. A backend's `get` now rejects when the store
+  could not be read (`BridgeStorageBackend`, `LocalStorageBackend`), so `SaveStore` tells four
+  cases apart: read (a save, nothing or garbage: saves write), newer (a later version's save: played
+  from, never written over, for the whole session), pending (the first read missed its 4 s: saves
+  wait for it and merge, as before) and unread (the read failed, or the late read gave up after
+  30 s: every save reads again first and writes only once a read succeeds, merged). Nothing is
+  written before the first read. A save that lands after the boot reaches the running progress
+  through `onLateSave` (it replaces the kit's `late()`). Supersedes the "newer version starts
+  fresh" line of D40.
+- **D48 A status event names its causes:** `by` (the ghosts that see it after the move, for the
+  dotted lines) and `lamps` (every lamp whose light reaches it, for the flash; plural because a
+  cell can be lit from up to four sides; filled even when the ghost shows "seen", D26). The house
+  model gives `lampsOf` per cell. Both are checked against brute force on 2,000 random houses.
+  Rests on GDD §3a (audit DÜŞÜK 7).
+- **D49 A board restored already solved says so** (`PlayState.solvedAtStart`): a crash between
+  the last move and the house-solved save leaves a save that restores solved, and the rules never
+  announce `solved` for it. Epic 3 checks it after every restore and plays the win (or moves on)
+  itself. Rests on GDD §3.2 (audit DÜŞÜK 6).
+- **D50 Progress guards** (`src/game/progress.ts`): `recordHouseInProgress` keeps and writes a
+  house in progress only for `progress.house`; `advanceHouse(solved)` keeps the furthest house
+  (`Math.max`, as the kit did), because with no title screen a late read can move the house on
+  while house 1 is on screen; `persistProgress` never writes a stale slot. Epic 3 changes the save
+  only through them. Rests on GDD §9 (audit DÜŞÜK 8).
+- **D51 Constants live where CLAUDE.md says**, not next to their code: the house format
+  (`HOUSE_N_MIN`, `HOUSE_N_MAX`, `ROOM_ID_RADIX`, `ROOM_MIN_CELLS`, `QUARTER_TURNS`), the boot
+  steps, the iOS re-check delays and the resume grace moved to `src/config.ts` (supersedes that
+  part of D44). The pure modules may import `src/config.ts`, which imports nothing (ESLint
+  enforces both); `tests/source-rules.test.ts` allows no other number than 0, 1, 2 and ½ in
+  `src/core`, `src/game` and `src/main.ts`. Rests on CLAUDE.md "No magic numbers" (audit DÜŞÜK 11).
+- **D52 The model screen is strict** (`tests/support/screen.ts`, the reference for Epic 3's
+  screen e2e): it requires a state for every placed or moved ghost, rejects a state that did not
+  change for a ghost that did not move, checks every room id, where a mark may change, what may
+  nudge, the phase order, the lit rooms and the win. Five faults the auditor planted in the rules
+  went past the old screen; all five (and a sixth) now fail its property test
+  (`tests/screen.test.ts` pins each reason). Rests on CLAUDE.md ("the settled screen always
+  equals the rules") (audit ORTA 2).
+- Also fixed (audit DÜŞÜK 3–5): the submission ZIP's fixed time is local midnight, so its bytes
+  match in every time zone (tested under UTC, Europe/Istanbul and America/Los_Angeles);
+  `audit-dist.mjs` fails on protocol-relative links, and it and `size.mjs` find dist/ from a path
+  with a space or "ü" (`fileURLToPath`); the production smoke test scans every shipped file and
+  waits for the SDK's own `platform_message_sent` record of GameReady instead of sleeping. Left as
+  they are, on the main session's word: the `.claude/` hooks and the Pages workflow (DÜŞÜK 9–10).
+
 ## Open questions (defaults in force)
 
 - **For Hasan (product direction): pace or depth, if the first real times disagree with the brief?**

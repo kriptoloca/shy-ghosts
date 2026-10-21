@@ -1,8 +1,16 @@
-/** Settles like `p`, or rejects with `timeout` after `ms` (the boot and the save read share it). */
+/** What `withTimeout` rejects with when time ran out (so a slow call is told from a failed one). */
+export class TimeoutError extends Error {
+  constructor() {
+    super('timeout');
+    this.name = 'TimeoutError';
+  }
+}
+
+/** Settles like `p`, or rejects with a TimeoutError after `ms` (the boot and the save share it). */
 export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => {
-      reject(new Error('timeout'));
+      reject(new TimeoutError());
     }, ms);
     p.then(
       (v) => {

@@ -1,4 +1,7 @@
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { GhostDebugState } from '../../src/dev/debug';
 
 /** Published path of the development-mode build (dev shortcuts, debug hooks). */
@@ -80,4 +83,95 @@ export async function platformPause(page: Page, paused: boolean): Promise<void> 
   await page.evaluate((p) => {
     window.__ghostDebug?.pause?.(p);
   }, paused);
+}
+
+/**
+ * Strings only dev code holds (CLAUDE.md: dev hooks and dev URL parameters live only inside
+ * `import.meta.env.DEV`). None may appear in a file the production build ships; the only dynamic
+ * import is the dev hooks' (a production one would need a review of this list).
+ */
+export const DEV_ONLY = [
+  '__ghostDebug',
+  'game-debug',
+  'simulatePause',
+  'fpsmin',
+  'playtest',
+  'fakeads',
+  'fake-ad',
+  'URLSearchParams',
+  'location.search',
+  'import(',
+];
+
+/** Text files the build ships; the third-party Bridge runtime is audited separately. */
+const TEXT = /\.(?:js|mjs|css|html|json|svg|txt)$/;
+const THIRD_PARTY = new Set(['playgama-bridge.js']);
+/** A file a shipped file names: `./x.js`, `assets/x.js`, `./assets/x.css` … */
+const NAMED = /(?:\.\/|\bassets\/)[\w./-]+\.(?:js|mjs|css|json)\b/g;
+
+/**
+ * Every text file of the production build as [path, text], the /test/ dev build left out. Local
+ * runs read dist/ from disk, so every file counts, named or not; live runs (E2E_BASE_URL, no dist/
+ * on disk) crawl from index.html through every file a shipped file names.
+ */
+export async function shippedFiles(request: APIRequestContext): Promise<[string, string][]> {
+  const dist = fileURLToPath(new URL('../../dist/', import.meta.url));
+  if (!process.env.E2E_BASE_URL && existsSync(dist)) {
+    const out: [string, string][] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const abs = join(dir, name);
+        const rel = relative(dist, abs).split('\\').join('/');
+        if (rel === 'test') continue;
+        if (statSync(abs).isDirectory()) walk(abs);
+        else if (TEXT.test(name) && !THIRD_PARTY.has(name))
+          out.push([rel, readFileSync(abs, 'utf8')]);
+      }
+    };
+    walk(dist);
+    return out;
+  }
+  const out = new Map<string, string>();
+  const queue = ['index.html'];
+  while (queue.length > 0) {
+    const path = queue.shift() as string;
+    if (out.has(path) || THIRD_PARTY.has(path.split('/').at(-1) ?? '')) continue;
+    const text = await (await request.get(`./${path}`)).text();
+    out.set(path, text);
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+    for (const m of text.matchAll(NAMED)) {
+      const ref = m[0];
+      queue.push(ref.startsWith('./') ? `${dir}${ref.slice(2)}` : ref);
+    }
+  }
+  return [...out.entries()];
+}
+
+declare global {
+  interface Window {
+    /** Platform messages the Bridge SDK reported as sent (`recordSdkMessages`). */
+    __sdkMessages?: string[];
+  }
+}
+
+/**
+ * Records every platform message the Bridge SDK reports as sent (its public
+ * `platform_message_sent` event, docs/bridge-notes.md), from the moment the SDK script creates
+ * `window.bridge`: how a production page, which has no dev hooks, tells when GameReady went out.
+ */
+export async function recordSdkMessages(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const sent: string[] = [];
+    window.__sdkMessages = sent;
+    let held: unknown;
+    Object.defineProperty(window, 'bridge', {
+      configurable: true,
+      get: () => held,
+      set: (v: unknown) => {
+        held = v;
+        const emitter = v as { on?: (event: string, cb: (message: unknown) => void) => void };
+        emitter.on?.('platform_message_sent', (message) => sent.push(String(message)));
+      },
+    });
+  });
 }

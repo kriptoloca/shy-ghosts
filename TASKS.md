@@ -57,8 +57,8 @@ to what the graybox needs (D2).
   relocation, removal, nudges, marks (paint, erase, cleared by a placement), undo of every move
   kind (a hint's included); property tests over 2,000 random houses (a random move sequence equals
   its replay; status flags equal a brute-force sight check); rotation keeps the solution.
-- Status 2026-10-21: built, uncommitted for its review and audit (docs/PROGRESS.md); decisions
-  D41–D46.
+- Status 2026-10-21: done (`fa66f51`, pushed); audited (0 KRİTİK, 0 YÜKSEK, 2 ORTA, 9 DÜŞÜK),
+  findings fixed in `fix(epic-1): audit findings` (D47–D52); decisions D41–D46.
   - [x] `house.ts`: parse and validate, segments, sight, light, candidates, `fromRows`, `rotate`
   - [x] `state.ts`: `tap`, `stroke`, `undo`, `hint` with their events; states, settled, solved;
         `serialize` / `restore`
@@ -71,7 +71,10 @@ to what the graybox needs (D2).
         brute-force states, undo, save round trip
   - [x] rotation keeps the solution
   - [x] `npm run check`, `npm test` (89), `npm run build`, `npm run e2e` (4) green
-  - [ ] `code-review` and the adversarial audit (the auditor), then `feat(epic-1)`
+  - [x] `code-review` and the adversarial audit (the auditor), then `feat(epic-1)`
+  - [x] audit findings closed red-first: saves never overwritten unread or newer, strict model
+        screen (6 of 6 planted faults caught), ZIP bytes in every time zone, the dist audit,
+        the production smoke, `solvedAtStart`, `by` / `lamps`, progress guards, constants
 
 ## Epic 2 — Content pipeline (M0) → Gate A
 - `gen/rng.ts` (copied), `gen/params.ts` (§7 bands and windows), `gen/solve.ts`, `gen/grade.ts`,

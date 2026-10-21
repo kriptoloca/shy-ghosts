@@ -5,8 +5,11 @@
 // the /test/ dev build.
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DIST = new URL('../dist/', import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: the pathname keeps %20 and %C3%BC, so a project in a folder
+// with a space or a non-ASCII letter would not be found (audit 2026-10-21).
+const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 /** Initial download target (brief §9): procedural art and synthesized sound keep it small. */
 const TARGET = 5 * 1024 * 1024;
 /** YouTube Playables hard limit for the initial load and for any single file. */
