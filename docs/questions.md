@@ -702,14 +702,23 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
   floor or test tolerance moved. The auditor's A9 re-run passed Gate A on the new files (1,792 of
   1,792; its three findings closed, D88). Watched: house 5's blind win rate, 0.0078 against A7's
   cap of 0.01, the only generated house above 0.004.
+- **D91 A third tune round, the last, approved by Hasan** (2026-10-22, after Gate B round 3;
+  docs/gate-b-round3.md). Asked how to go on, Hasan chose the depth round:
+  - from house 8 on, deeper houses, with several counting moves and openings that do not repeat;
+  - Gate A's A6 solve-time ceilings for houses 8–24 may rise as far as the deeper houses need;
+    every other Gate A threshold and Gate B's bars B1–B7 stay unchanged;
+  - the hint's message, the end of a house, the colours and the landscape layout are fixed too;
+  - then a new blind playtest with the same bars. A fail ends Shy Ghosts for good.
+  This answers the open question "pace or depth" with depth for houses 8–24. The exception to
+  the fun gate's two-round rule (CLAUDE.md) is his; the main session recorded it from his answer.
 
 ## Open questions (defaults in force)
 
-- **For Hasan (product direction): pace or depth?** Since Gate B round 1 the default is pace:
-  no board above 8 × 8, depth from the deductions (D69). Gate B round 3 (2026-10-22,
-  docs/gate-b-round3.md) failed on depth: every house from 4 was one chain of forced moves, and
-  the houses rated 4 were the new elements and the deeper ones (27, 31, 34). The work stops
-  until Hasan answers. Earlier wording, kept for the record:
+- **Answered 2026-10-22 (D91): depth for houses 8–24.** For Hasan (product direction): pace or
+  depth? Since Gate B round 1 the default was pace: no board above 8 × 8, depth from the
+  deductions (D69). Gate B round 3 (docs/gate-b-round3.md) failed on depth: every house from 4
+  was one chain of forced moves, and the houses rated 4 were the new elements and the deeper
+  ones (27, 31, 34). Earlier wording, kept for the record:
   **pace or depth, if the first real times disagree with the brief?**
   The brief's own formula puts houses 4–24 at about 65–145 s and houses from 25 at about 2–3 minutes
   (manors about 4), against its minute map's 30–90 s; by the formula the first 10 minutes end around

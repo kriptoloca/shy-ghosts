@@ -201,7 +201,8 @@ to what the graybox needs (D2).
         `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
   - [ ] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
-        docs/gate-b-round3.md); both tune rounds used; **the work stops** until Hasan decides
+        docs/gate-b-round3.md); Hasan approved a third tune round, the last (D91: depth from
+        house 8, A6's ceilings for 8–24 may rise); round 4 follows, and a fail ends the game
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
