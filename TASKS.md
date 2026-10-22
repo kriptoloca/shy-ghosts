@@ -200,8 +200,8 @@ to what the graybox needs (D2).
   - [x] `code-review` and the adversarial audit; the findings fixed red-first (D63–D66):
         `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
-  - [ ] Gate B (the playtester), B1–B7: rounds 1 and 2 not passed; tune rounds 1 and 2 of 2
-        built (below); round 3, the last, next
+  - [ ] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
+        docs/gate-b-round3.md); both tune rounds used; **the work stops** until Hasan decides
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
@@ -273,8 +273,10 @@ to what the graybox needs (D2).
         without the GPU flags, green three runs in a row)
   - [x] the re-audit (all 14 closed; one new DÜŞÜK, a per-frame allocation in `inputHeld()`,
         fixed by the main session); the commit (the main session)
-  - [ ] round 3, the last (docs/gate-b-round2.md §9: a new playtester at 360 × 640 @2x, houses
-        1–20, 27, 31, 34; B1–B7 unchanged; a fail stops the work)
+  - [x] round 3, the last (docs/gate-b-round2.md §9; build `4d4ba4e`): **not passed**. B1–B4
+        and B6 pass; B5 fails (interest median 3 of 5 over houses 4–20, bar 3.5; houses 11–20
+        median 3 below houses 4–10's 4); B7 fails (verdict NO, Flow 2, Fair 4). The work stops;
+        the report and the per-house table: docs/gate-b-round3.md
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B
 - `game/feel.ts` (every GDD §3a value as a named constant), procedural textures (ghost states,

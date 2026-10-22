@@ -706,7 +706,10 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
 ## Open questions (defaults in force)
 
 - **For Hasan (product direction): pace or depth?** Since Gate B round 1 the default is pace:
-  no board above 8 × 8, depth from the deductions (D69). Earlier wording, kept for the record:
+  no board above 8 × 8, depth from the deductions (D69). Gate B round 3 (2026-10-22,
+  docs/gate-b-round3.md) failed on depth: every house from 4 was one chain of forced moves, and
+  the houses rated 4 were the new elements and the deeper ones (27, 31, 34). The work stops
+  until Hasan answers. Earlier wording, kept for the record:
   **pace or depth, if the first real times disagree with the brief?**
   The brief's own formula puts houses 4–24 at about 65–145 s and houses from 25 at about 2–3 minutes
   (manors about 4), against its minute map's 30–90 s; by the formula the first 10 minutes end around

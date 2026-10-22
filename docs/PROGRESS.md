@@ -4,14 +4,15 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-Epics 0–3 and Gate B tune rounds 1–2 done and pushed (`kriptoloca/shy-ghosts`, `main` at
-`feat(gate-b): tune round 2`); **Gate A passed** (A1–A9; one clause amended with Hasan's approval,
-D82: the first shelf, count and lamp at houses 5, 7 and 8, every threshold unchanged) · **Gate B
-rounds 1 and 2 did not pass** (round 2: B5 interest, median 3 of 5, bar 3.5) · **Gate B tune
-round 2 of 2, the last** (docs/gate-b-round2.md, D80–D90): full gate green, Gate A 42 of 42 and
-the auditor's A9 re-run passed on the rebuilt levels; its code audit (1 KRİTİK, 1 YÜKSEK, 2 ORTA,
-10 DÜŞÜK) fixed red-first and closed by the re-audit · Next: Gate B round 3, the last (a fail
-stops the work) → Hasan's screenshots → Epic 4 · Last update: 2026-10-21 · Branch: `main`
+**Stopped: Gate B did not pass in round 3, the last (2026-10-22, docs/gate-b-round3.md).** The
+work waits for Hasan's decision (CLAUDE.md, the fun gate). B1–B4 and B6 pass: the rules read
+without text, every board was read right, no guess, every house asks for a deduction, and input
+and reload work. B5 fails (interest median 3 of 5 over houses 4–20, bar 3.5; interest fell after
+house 10) and B7 fails (verdict NO, Flow 2, Fair 4): every house from 4 was one chain of forced
+moves. · Epics 0–3 and Gate B tune rounds 1–2 done and pushed (`kriptoloca/shy-ghosts`, `main`
+at `4d4ba4e feat(gate-b): tune round 2`); **Gate A passed** (A1–A9; one clause amended with
+Hasan's approval, D82) · Both tune rounds used; another round or a changed bar is Hasan's call
+only · Last update: 2026-10-22 · Branch: `main`
 Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
 core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
 docs/questions.md D1).
@@ -839,18 +840,15 @@ the buttons, plain loops).
       and 8; D82) and the CLAUDE.md update of rule 5 and the input rule (D69, D72).
 
 ## Next steps (in order)
-1. **Gate B round 3, the last** (docs/gate-b-round2.md §9): a new playtester in a fresh session
-   that never saw rounds 1–2, the same persona and bars B1–B7, 360 × 640 at device scale factor
-   2, houses 1–20 in order, then 27, 31 and 34 (URLs above), and houses 9, 17, 20 and 34 again at
-   540 × 960, 600 × 600 and 844 × 390; screenshots within 0.7 s of each house appearing. The main
-   session puts each house's lesson or insight (plan §1.3) next to the report. A fail stops the
-   work: Hasan gets the report and a recommendation (CLAUDE.md).
-2. Gate B passed: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at 9:16, one
-   line each), then the `/test/` link (GitHub Pages is still off: the Pages workflow's
+1. **Hasan decides** (the work is stopped; docs/gate-b-round3.md): stop Shy Ghosts, or allow a
+   third tune round, which only he can, on depth (his open question "pace or depth": deeper
+   houses from house 8, openers that do not repeat, the playtester's UX list), followed by a
+   fourth blind round with the same bars.
+2. Only if Gate B passes: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at
+   9:16, one line each), then the `/test/` link (GitHub Pages is still off: the Pages workflow's
    `configure-pages` cannot switch it on with the workflow's token, so every run so far skipped
    the deploy; Hasan's step above); Epic 4 (feel, face and sound) starts. Its feel constants
    move from `src/config.ts` ("Graybox motion") to `src/game/feel.ts`; it decides whether the two
    graybox aids of D59 (the lasting sight line, the glance dots) stay, and takes the palest rose
    and sky down a step (the design critique above).
-3. Open, not blocking before Epic 4: Hasan's answer on pace or depth (docs/questions.md, Open
-   questions); arrow keys and Enter on desktop (GDD §3.1, optional, D60).
+3. Open: arrow keys and Enter on desktop (GDD §3.1, optional, D60).
