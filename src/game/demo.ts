@@ -14,7 +14,7 @@ import {
   DEMO_TRAIL_MS,
   DEMO_TRAIL_SHORT_MS,
 } from '../config';
-import { shadowsOf, type HouseModel, type Shadow } from '../core/house';
+import { lightDemoCell, shadowsOf, type HouseModel, type Shadow } from '../core/house';
 import type { GhostStatus } from '../core/state';
 
 /**
@@ -185,20 +185,19 @@ export function demoFor(id: number, h: HouseModel): DemoScript | null {
     return held({ ...NOTHING, trails: [toward(a, b), toward(b, a)] }, DEMO_TRAIL_MS);
   }
   if (id === DEMO_LAMP_HOUSE) {
+    // the light alone (D103): the copy stands on a lit cell that no resident sees, stepping out of
+    // the resident it lies diagonal to, so it squints and nothing else (`lightDemoCell`, the cell
+    // the build's lesson test asks for)
     const lamp = h.objects.indexOf('L');
-    const from = h.givens[0];
-    if (lamp < 0 || from === undefined) return null;
-    const to = DIRECTIONS.map(([dr, dc]) => {
-      const r = Math.floor(from / h.n) + dr;
-      const c = (from % h.n) + dc;
-      return r >= 0 && r < h.n && c >= 0 && c < h.n ? r * h.n + c : -1;
-    }).find((c) => c >= 0 && h.lit[c] === true && !h.solution.includes(c));
-    if (to === undefined) return null;
+    const spot = lightDemoCell(h, h.givens, h.solution);
+    if (lamp < 0 || !spot) return null;
     return held(
       {
         ...NOTHING,
         beam: { at: 0, ms: DEMO_BEAM_MS, lamp, cells: lightOf(h, lamp), bump: null },
-        copies: [{ at: DEMO_BEAM_MS, ms: DEMO_COPY_MS, from, to, pose: 'lit' }],
+        copies: [
+          { at: DEMO_BEAM_MS, ms: DEMO_COPY_MS, from: spot.from, to: spot.cell, pose: 'lit' },
+        ],
       },
       DEMO_BEAM_MS + DEMO_COPY_MS,
     );

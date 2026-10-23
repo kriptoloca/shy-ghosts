@@ -120,6 +120,8 @@ function runLevels(args: string[]): { status: number; out: string } {
 interface LevelsLib {
   LEVELS_BUDGET_SECONDS: number;
   budgetError: (seconds: number, budget?: number) => string | null;
+  startsText: (table: Record<number, number>) => string;
+  startsError: (found: Record<number, number>, table: Record<number, number>) => string | null;
 }
 
 describe('levels.mjs (GENERATOR.md §8; audit 2026-10-21, DÜŞÜK 6 and YÜKSEK 2)', () => {
@@ -138,6 +140,24 @@ describe('levels.mjs (GENERATOR.md §8; audit 2026-10-21, DÜŞÜK 6 and YÜKSEK
     expect(lib.budgetError(600)).toBeNull();
     expect(lib.budgetError(600.1)).toMatch(/over the 600 s budget/);
   }, 120_000);
+
+  it("levels:starts (D96): prints the ladder's start table as params.ts holds it, and fails when it differs", async () => {
+    const lib = (await import(pathToFileURL(join(SCRIPTS, 'lib', 'levels.mjs')).href)) as LevelsLib;
+    expect(lib.startsText({ 8: 157, 9: 256, 10: 256 })).toBe(
+      'export const LADDER_STARTS: Readonly<Record<number, number>> = {\n  8: 157,\n  9: 256,\n  10: 256,\n};',
+    );
+    expect(lib.startsError({ 8: 157, 9: 256 }, { 8: 157, 9: 256 })).toBeNull();
+    expect(lib.startsError({ 8: 157, 9: 300 }, { 8: 157, 9: 256 })).toMatch(
+      /LADDER_STARTS in src\/gen\/params\.ts is stale: house 9 starts at 300, not 256/,
+    );
+    expect(lib.startsError({ 8: 157 }, { 8: 157, 9: 256 })).toMatch(
+      /house 9 starts at none, not 256/,
+    );
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['levels:starts']).toBe('node scripts/levels.mjs --starts');
+  });
 
   it('CI stops levels:check after 10 minutes', () => {
     const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');

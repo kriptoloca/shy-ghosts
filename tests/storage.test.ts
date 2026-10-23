@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HINT_COOLDOWN_S } from '../src/config';
 import { BridgeStorageBackend } from '../src/platform/bridge';
 import {
   CELLS_MAX,
@@ -14,20 +15,27 @@ import {
   type StorageBackend,
 } from '../src/platform/storage';
 
-/** The save model v1 (GDD §9, docs/questions.md D31, D47) and its store (CLAUDE.md rule 7). */
+/**
+ * The save model (GDD §9, docs/questions.md D31, D47; v2 adds the hint's recharge, D98) and its
+ * store (CLAUDE.md rule 7).
+ */
 
 function inProgress(id: number, extra: Partial<HouseInProgress> = {}): HouseInProgress {
   return { id, ghosts: [], marks: [], seconds: 0, hints: 0, moves: 0, conflicts: 0, ...extra };
 }
 
-/** A v2 save as Epic 5 will write it: the v1 fields plus fields a v1 build does not know. */
-const V2 = JSON.stringify({
-  version: 2,
+/**
+ * A v3 save as a later build (Epic 5) will write it: the v2 fields plus fields a v2 build does not
+ * know (it was a v2 fixture until the save became v2, D98).
+ */
+const V3 = JSON.stringify({
+  version: 3,
   house: 37,
   housesSolved: 40,
   current: { id: 37, ghosts: [3, 17], marks: [5], seconds: 12, hints: 1, moves: 6, conflicts: 2 },
   sound: false,
   music: true,
+  hintReadyIn: 61.5,
   costumes: [1, 2, 3],
   streak: { count: 9, best: 12 },
 });
@@ -53,8 +61,8 @@ const fails = (): Promise<string | null> => Promise.reject(new Error('host stora
 const answers = (v: string | null) => (): Promise<string | null> => Promise.resolve(v);
 const hangs = (): Promise<string | null> => new Promise<string | null>(() => undefined);
 
-describe('save model v1', () => {
-  it('a fresh save starts at house 1 with nothing in progress, sound and music on', () => {
+describe('save model v2', () => {
+  it('a fresh save starts at house 1 with nothing in progress, sound and music on, the hint ready', () => {
     expect(defaultSave()).toEqual({
       version: SAVE_VERSION,
       house: 1,
@@ -62,8 +70,9 @@ describe('save model v1', () => {
       current: null,
       sound: true,
       music: true,
+      hintReadyIn: 0,
     });
-    expect(SAVE_VERSION).toBe(1);
+    expect(SAVE_VERSION).toBe(2);
     expect(SAVE_KEY).toBe('shy-ghosts:save');
     // cell indices of the largest house, 9 × 9
     expect(CELLS_MAX).toBe(81);
@@ -93,6 +102,7 @@ describe('save model v1', () => {
       current: inProgress(7, { ghosts: [1, 3, 9], marks: [0, 4], seconds: 41.25, hints: 2 }),
       sound: false,
       music: true,
+      hintReadyIn: 0,
     });
   });
 
@@ -108,8 +118,8 @@ describe('save model v1', () => {
     expect(migrate({ version: SAVE_VERSION, house: Number.NaN }).house).toBe(1);
   });
 
-  it('a newer save is read for its v1 fields (v2 only adds fields, D31)', () => {
-    expect(migrate(JSON.parse(V2) as unknown)).toEqual({
+  it('a newer save is read for its v2 fields (a later version only adds fields, D31)', () => {
+    expect(migrate(JSON.parse(V3) as unknown)).toEqual({
       version: SAVE_VERSION,
       house: 37,
       housesSolved: 40,
@@ -123,7 +133,24 @@ describe('save model v1', () => {
       }),
       sound: false,
       music: true,
+      hintReadyIn: 61.5,
     });
+  });
+
+  it("a v1 save reads with the hint ready; v2's recharge is kept within 0 and the cooldown (D98)", () => {
+    const v1 = { version: 1, house: 4, housesSolved: 3, current: null, sound: true, music: true };
+    expect(migrate(v1)).toEqual({ ...v1, version: SAVE_VERSION, hintReadyIn: 0 });
+    const v2 = (hintReadyIn: unknown): unknown => ({ version: 2, house: 4, hintReadyIn });
+    expect(migrate(v2(50)).hintReadyIn).toBe(50);
+    expect(migrate(v2(12.25)).hintReadyIn).toBe(12.25);
+    expect(migrate(v2(-3)).hintReadyIn).toBe(0);
+    expect(migrate(v2(HINT_COOLDOWN_S + 1)).hintReadyIn).toBe(HINT_COOLDOWN_S);
+    expect(migrate(v2('50')).hintReadyIn).toBe(0);
+    expect(migrate(v2(Number.POSITIVE_INFINITY)).hintReadyIn).toBe(0);
+    // a late save merged with this session's keeps the longer recharge (no reload resets it)
+    const a = { ...defaultSave(), hintReadyIn: 40 };
+    const b = { ...defaultSave(), hintReadyIn: 10 };
+    expect([mergeSaves(a, b).hintReadyIn, mergeSaves(b, a).hintReadyIn]).toEqual([40, 40]);
   });
 
   it('a house in progress restores only onto the house to play, and only when well formed', () => {
@@ -175,7 +202,7 @@ describe('SaveStore', () => {
   });
 
   it('a newer save (a rollback, an older cached build) is played from, never overwritten', async () => {
-    const backend = scripted([answers(V2)]);
+    const backend = scripted([answers(V3)]);
     const store = new SaveStore(backend);
     const loaded = await store.load();
     expect(loaded.house).toBe(37);
@@ -252,7 +279,7 @@ describe('SaveStore', () => {
     const late: SaveData[] = [];
     store.onLateSave((s) => late.push(s));
     const saving = store.save({ ...defaultSave(), house: 2, housesSolved: 1 });
-    answer(V2);
+    answer(V3);
     expect(await saving).toBe(false);
     expect(late.map((s) => s.house)).toEqual([37]);
     expect(backend.written).toEqual([]);

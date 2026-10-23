@@ -1,4 +1,6 @@
 import type { GhostStatus } from '../core/state';
+import type { CardShown } from './card';
+import type { ReasonPicture } from './reason';
 import type { BoardView } from './view';
 
 /**
@@ -33,7 +35,54 @@ export function roomLetter(room: number): string {
   return AREA_LETTERS[room] ?? '?';
 }
 
-export function visibleText(id: number, view: BoardView): string {
+/**
+ * The bulb's picture (D98) in the same words: pale bands over lines, dark discs with digits, pale
+ * cells, small blue dots, faint figures, the pulsing area and dotted lines to empty cells.
+ */
+function pictureLines(view: BoardView, p: ReasonPicture): string[] {
+  const h = view.house;
+  const { n } = h;
+  const at = (i: number): string => `(${String(Math.floor(i / n))},${String(i % n)})`;
+  const line = (segment: number): string => {
+    const s = h.segments[segment];
+    if (!s) return '?';
+    const name = `${s.axis === 'row' ? 'row' : 'column'} ${String(s.line)}`;
+    const a = s.cells[0] as number;
+    const z = s.cells[s.cells.length - 1] as number;
+    return s.cells.length === n ? name : `${name}, ${at(a)} to ${at(z)}`;
+  };
+  const where = (b: ReasonPicture['badges'][number]): string => {
+    if (b.room !== null) return `at the top left corner of area ${roomLetter(b.room)}`;
+    const s = h.segments[b.segment ?? -1];
+    const first = s?.cells[0] ?? 0;
+    if (s?.axis === 'row')
+      return first % n === 0 ? `left of row ${String(s.line)}` : `on ${at(first - 1)}`;
+    return first < n ? `above column ${String(s?.line)}` : `on ${at(first - n)}`;
+  };
+  const list = (v: readonly number[]): string => (v.length > 0 ? v.map(at).join(' ') : 'none');
+  return [
+    `pale bands: ${p.bands.length > 0 ? p.bands.map(line).join('; ') : 'none'}`,
+    `dark discs with digits: ${
+      p.badges.length > 0
+        ? p.badges.map((b) => `the digit ${String(b.digit)} ${where(b)}`).join('; ')
+        : 'none'
+    }`,
+    `pale cells: ${list(p.wash)}`,
+    `small blue dots: ${list(p.dots)}`,
+    `faint figures with open eyes: ${list(p.copies)}`,
+    `pulsing area: ${p.pulse === null ? 'none' : roomLetter(p.pulse)}`,
+    `dotted lines to empty cells: ${
+      p.lines.length > 0 ? p.lines.map(([a, b]) => `${at(a)} to ${at(b)}`).join('; ') : 'none'
+    }`,
+  ];
+}
+
+export function visibleText(
+  id: number,
+  view: BoardView,
+  picture: ReasonPicture | null = null,
+  card: CardShown | null = null,
+): string {
   const h = view.house;
   const { n } = h;
   const area = (r: number, c: number): number => h.roomOf[r * n + c] as number;
@@ -98,5 +147,13 @@ export function visibleText(id: number, view: BoardView): string {
   lines.push(
     `color swatches: ${String(areas)}, ${String(view.glowing.size)} with a teal ring and a tick`,
   );
+  if (picture) lines.push(...pictureLines(view, picture));
+  // the held result card (D99): its digits and its two icons, as drawn
+  if (card) {
+    lines.push(
+      `a card ${card.beside ? 'beside' : 'below'} the board: the digits ${String(card.house)} and ${card.time}` +
+        `${card.noHint ? ', a bulb with a tick' : ''}, an arrow pointing right`,
+    );
+  }
   return lines.join('\n');
 }

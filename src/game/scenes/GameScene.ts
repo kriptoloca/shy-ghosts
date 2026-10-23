@@ -4,6 +4,7 @@ import {
   DEMO_MARK_HOUSE,
   DIM_ALPHA,
   DRAG_PX,
+  RESULT_GUARD_MS,
   SAVE_DEBOUNCE_MS,
   SLIDE_MS,
   WIN_BEAT_MS,
@@ -19,15 +20,29 @@ import type { PlayHouse } from '../../gen/record';
 import { getPlatform, markInteractive } from '../../platform/bridge';
 import type { HouseInProgress } from '../../platform/storage';
 import { BoardDisplay } from '../board';
+import { ResultCard, type CardShown } from '../card';
 import { demoFor, type DemoScript } from '../demo';
 import { makeGrayboxTextures } from '../graybox';
 import { Gesture } from '../gesture';
 import { Hud, type ButtonName } from '../hud';
 import { cellAt, computeLayout, type Layout } from '../layout';
 import { roomStyles } from '../look';
-import { advanceHouse, progress, recordHouseInProgress } from '../progress';
+import {
+  advanceHouse,
+  onLateSaveMerged,
+  progress,
+  recordHintRecharge,
+  recordHouseInProgress,
+} from '../progress';
 import { ResumeGrace, bindPauseGrace } from '../resume-grace';
-import { DemoClock, HintClock, HintFlow, HouseSession, type MoveKind } from '../session';
+import {
+  DemoClock,
+  HintClock,
+  HintFlow,
+  HouseSession,
+  usesReason,
+  type MoveKind,
+} from '../session';
 import { BoardView } from '../view';
 
 /** The house on screen and everything that belongs to it. */
@@ -51,26 +66,26 @@ export interface HouseOnScreen {
   log: HouseLog | null;
 }
 
-export type Phase = 'demo' | 'play' | 'win' | 'slide';
-
-/** The finale from the solve to the next house: the beat, then the slide (D73). */
-const FINALE_MS = WIN_BEAT_MS + SLIDE_MS;
+export type Phase = 'demo' | 'play' | 'win' | 'card' | 'slide';
 
 /** The dev hooks' record of the scene (DEV builds only; round 1's code audit, DÜŞÜK 9). */
 interface DevState {
   /** Boards built so far (a resize at the same size builds none). */
   builds: number;
   /**
-   * The last finale: its beat on the scene's clock, the whole of it on the wall clock, how far
-   * the clock moved in the frame the slide began, and how many ghosts still played a settle's
-   * motion as the ghosts began to hop.
+   * The last finale (D73, D99): its beat on the scene's clock, the wall time from the solve until
+   * the result card was up, the slide on the wall clock, how far the clock moved in the frame the
+   * card began, and how many ghosts still played a settle's motion as the ghosts began to hop.
    */
-  lastFinale: { beatMs: number; wallMs: number; stepMs: number; settling: number | null } | null;
-  /** How far the last beat ran before the slide, on the scene's clock (a tap cuts it short). */
+  lastFinale: FinaleRecord | null;
+  /** How far the last beat ran before the card, on the scene's clock (a tap cuts it short). */
   slidAt: number;
-  /** The finale's clock at its last step, and how far it moved in the step the slide began. */
+  /** The finale's clock at its last step, and how far it moved in the step the card began. */
   stepAt: number;
   slideStepMs: number;
+  /** Wall ms from the solve until the card was up; the wall clock when the slide began. */
+  cardUpMs: number | null;
+  slideWallAt: number;
   /** Demonstrations started since the Game began, replays included (D70, D83). */
   demos: number;
   /** The house on screen: when it appeared, when its input opened, whether a tap skipped it. */
@@ -79,14 +94,24 @@ interface DevState {
   demoSkipped: boolean;
 }
 
+/** The dev hooks' record of a finale (D73, D99). */
+export interface FinaleRecord {
+  beatMs: number;
+  cardUpMs: number | null;
+  slideWallMs: number;
+  stepMs: number;
+  settling: number | null;
+}
+
 /**
  * Game (GDD §11 screen 2), the graybox loop of Epic 3 with Gate B's round-1 and round-2 changes:
  * the house to play, its teaching demonstration (D70, D83: as it appears, unless resumed, and
  * again after DEMO_IDLE_MS without input until the first placement; a tap skips it, never in its
  * first DEMO_SKIP_FROM_MS), taps on its cells, drags that paint marks or carry a ghost (D72), undo
  * and the free two-press hint (the reason, which stays until the next move, then the step; D74,
- * D86), the progress dots (D75), the finale and the next house sliding in by itself (D73, D84; a
- * tap skips it from WIN_SKIP_FROM_MS), the save after every change (debounced) and every house,
+ * D86, D98), the progress dots (D75), the finale (D73, D84; a tap skips it from WIN_SKIP_FROM_MS),
+ * the held result card that a tap continues from RESULT_GUARD_MS (D99), then the next house
+ * sliding in, the save after every change (debounced) and every house,
  * the resume of a house in progress, the platform pause (everything freezes under a dim cover,
  * the tween clock included; the waking tap never counts). The rules resolve in src/core; this
  * scene only plays their events back (CLAUDE.md).
@@ -117,6 +142,10 @@ export class GameScene extends Phaser.Scene {
   private pausedAt: number | null = null;
   /** The house sliding out. */
   private leaving: HouseOnScreen | null = null;
+  /** The held result card (D99), and the finale's clock when it began and when the slide began. */
+  private card: ResultCard | null = null;
+  private cardAt = 0;
+  private slideAt = 0;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saving = 0;
   private interactiveAt: number | null = null;
@@ -140,6 +169,8 @@ export class GameScene extends Phaser.Scene {
         slidAt: 0,
         stepAt: 0,
         slideStepMs: 0,
+        cardUpMs: null,
+        slideWallAt: 0,
         demos: 0,
         shownAt: null,
         playAt: null,
@@ -154,6 +185,13 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.phase = 'play';
     this.paused = false;
+    // the hint's recharge from the save (D98); a save that lands after the boot brings its own,
+    // which takes over when longer (round 3's code audit, DÜŞÜK 2)
+    this.hints.restore(progress.hintReadyIn);
+    const offMerged = onLateSaveMerged((stored) => {
+      this.hints.adopt(stored.hintReadyIn);
+      progress.hintReadyIn = this.hints.remaining;
+    });
     makeGrayboxTextures(this);
     this.hud = new Hud(this, (name) => {
       this.press(name);
@@ -214,6 +252,7 @@ export class GameScene extends Phaser.Scene {
       window.removeEventListener('pagehide', flush);
       unsubscribe();
       unpause();
+      offMerged();
       this.grace.dispose();
       this.house.board.destroy();
       this.leaving?.board.destroy();
@@ -242,6 +281,8 @@ export class GameScene extends Phaser.Scene {
           effects: () => this.house.board.effects(),
           previous: () => this.previous,
           beatMs: () => (this.phase === 'win' ? this.finaleAt() : null),
+          cardMs: () => (this.phase === 'card' ? this.finaleAt() - this.cardAt : null),
+          card: () => this.cardShown(),
           finale: () => this.dev?.lastFinale ?? null,
           demos: () => this.dev?.demos ?? 0,
           shownAt: () => this.dev?.shownAt ?? null,
@@ -249,7 +290,8 @@ export class GameScene extends Phaser.Scene {
           demoSkipped: () => this.dev?.demoSkipped ?? false,
           hintReason: () => this.hintFlow.pending,
           reasonShown: () => this.house.board.showingReason,
-          timeShown: () => this.house.board.shownTime(),
+          reasonPicture: () => this.house.board.reasonPicture(),
+          timeShown: () => this.cardShown()?.time ?? null,
           tweenScale: () => this.tweens.timeScale,
         });
       });
@@ -269,7 +311,7 @@ export class GameScene extends Phaser.Scene {
       this.thawFrom = null;
       this.tweens.timeScale = 1;
     }
-    if (this.phase === 'win' || this.phase === 'slide') this.finaleStep();
+    if (this.phase === 'win' || this.phase === 'card' || this.phase === 'slide') this.finaleStep();
     if (this.phase === 'play') {
       this.house.session.tick(delta);
       // input in hand is no idle time, and a demonstration never plays again over it or over a
@@ -419,11 +461,12 @@ export class GameScene extends Phaser.Scene {
     // a press in hand never reaches the next house (audit 2026-10-21, YÜKSEK 3)
     this.hud.cancelPress();
     this.saving++;
+    progress.hintReadyIn = this.hints.remaining;
     void advanceHouse(h.id).finally(() => {
       this.saving--;
     });
     this.updateHud();
-    h.board.celebrate(h.session.seconds);
+    h.board.celebrate();
     // the next house is built now, in the hit stop, hidden off to the right
     this.next = this.open(progress.house, this.scale.gameSize.width);
     this.next.board.root.setVisible(false);
@@ -433,38 +476,73 @@ export class GameScene extends Phaser.Scene {
   private finaleAt(): number {
     const now = performance.now();
     const paused = this.pausedMs + (this.pausedAt === null ? 0 : now - this.pausedAt);
-    return Math.min(FINALE_MS, now - this.wonAt - paused + this.skipped);
+    return now - this.wonAt - paused + this.skipped;
   }
 
   /**
-   * The finale moves on: past WIN_BEAT_MS the next house starts to slide in, and the boards
-   * follow the clock until the slide ends.
+   * The finale moves on: past WIN_BEAT_MS the result card rises and holds (D99); once a tap
+   * continued it, the boards follow the clock until the slide ends.
    */
   private finaleStep(): void {
     const at = this.finaleAt();
-    if (this.phase === 'win' && at >= WIN_BEAT_MS) this.slide();
+    if (this.phase === 'win' && at >= WIN_BEAT_MS) this.showCard();
     if (import.meta.env.DEV && this.dev) this.dev.stepAt = at;
     const old = this.leaving;
     if (this.phase !== 'slide' || !old) return;
     const width = this.scale.gameSize.width;
-    const p = Math.min(1, (at - WIN_BEAT_MS) / SLIDE_MS);
+    const p = Math.min(1, (at - this.slideAt) / SLIDE_MS);
     const x = width * Phaser.Math.Easing.Sine.InOut(p);
     old.board.root.x = -x;
+    this.card?.root.setX(-x);
     this.house.board.root.x = width - x;
     if (p >= 1) this.arrive();
   }
 
-  /** The beat is over (or skipped): the next house, built in the hit stop, starts to slide in. */
-  private slide(): void {
+  /** The beat is over (or skipped): the result card rises below the board and holds (D99). */
+  private showCard(): void {
     if (this.phase !== 'win') return;
+    const at = this.finaleAt();
     // how far the beat ran on the scene's clock, as measured now (a tap's skip left out), and how
     // far the clock moved in this step
     if (import.meta.env.DEV && this.dev) {
-      const at = this.finaleAt();
       this.dev.slidAt = at - this.skipped;
       this.dev.slideStepMs = at - this.dev.stepAt;
+      this.dev.cardUpMs = null;
     }
+    this.phase = 'card';
+    this.cardAt = at;
+    this.card = this.makeCard(true);
+    this.updateHud();
+  }
+
+  /** The house's result card, rising (`rise`) or standing at once (a new screen size). */
+  private makeCard(rise: boolean): ResultCard {
+    const h = this.house;
+    const wonAt = this.wonAt;
+    return new ResultCard(
+      this,
+      h.layout,
+      h.id,
+      h.session.seconds,
+      h.session.hints === 0,
+      rise,
+      () => {
+        if (import.meta.env.DEV && this.dev) this.dev.cardUpMs = performance.now() - wonAt;
+      },
+    );
+  }
+
+  /** What the card shows, or null (dev hooks, `visible()`). */
+  private cardShown(): CardShown | null {
+    return this.phase === 'card' ? (this.card?.shown() ?? null) : null;
+  }
+
+  /** A tap after the card's guard: the next house, built in the hit stop, starts to slide in. */
+  private slide(): void {
+    if (this.phase !== 'card') return;
+    if (import.meta.env.DEV && this.dev) this.dev.slideWallAt = performance.now();
     this.phase = 'slide';
+    this.slideAt = this.finaleAt();
     this.leaving = this.house;
     const next = this.next ?? this.open(progress.house, this.scale.gameSize.width);
     this.next = null;
@@ -477,11 +555,14 @@ export class GameScene extends Phaser.Scene {
     if (import.meta.env.DEV && this.dev) {
       this.dev.lastFinale = {
         beatMs: this.dev.slidAt,
-        wallMs: performance.now() - this.wonAt,
+        cardUpMs: this.dev.cardUpMs,
+        slideWallMs: performance.now() - this.dev.slideWallAt,
         stepMs: this.dev.slideStepMs,
         settling: this.leaving?.board.hopOverlap() ?? null,
       };
     }
+    this.card?.destroy();
+    this.card = null;
     this.leaving?.board.destroy();
     this.leaving = null;
     this.house.board.root.x = 0;
@@ -498,15 +579,20 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * A tap during the finale skips the beat from WIN_SKIP_FROM_MS on (D73: earlier taps, the last
-   * placement's among them, never cut the payoff short); during the slide, it ends the slide (GDD
-   * §3.2). It does nothing else, not even on a button (audit YÜKSEK 3).
+   * placement's among them, never cut the payoff short), and the card rises at once; on the card it
+   * continues from RESULT_GUARD_MS after the card began (D99: the tap that skipped the beat, or the
+   * last placement's, never skips the card); during the slide, it ends the slide (GDD §3.2). It does
+   * nothing else, not even on a button (audit YÜKSEK 3).
    */
   private skip(): void {
     this.hud.cancelPress();
     if (this.phase === 'win') {
       if (this.finaleAt() < WIN_SKIP_FROM_MS) return;
       this.finaleTo(WIN_BEAT_MS);
-    } else if (this.phase === 'slide') this.finaleTo(FINALE_MS);
+    } else if (this.phase === 'card') {
+      if (this.finaleAt() - this.cardAt < RESULT_GUARD_MS) return;
+      this.slide();
+    } else if (this.phase === 'slide') this.finaleTo(this.slideAt + SLIDE_MS);
   }
 
   // ---- input ------------------------------------------------------------------------------------
@@ -574,9 +660,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Undo, or the free hint in two presses (D74, D86): the first shows why the next step is forced
-   * and counts the hint (its cooldown starts); the reason stays until the next move, which takes
-   * it away, or the second press, which does the step.
+   * Undo, or the free hint in two presses (D74, D86, D98): the first shows why the next step is
+   * forced and counts the hint (its cooldown runs for now); the reason stays until the next move,
+   * which takes it away (and gives the recharge back unless the move did what the reason shows),
+   * or the second press, which does the step and starts the cooldown.
    */
   private press(name: ButtonName): void {
     if (this.paused || this.phase !== 'play') return;
@@ -589,6 +676,7 @@ export class GameScene extends Phaser.Scene {
     }
     const r = this.hintFlow.press(this.hints.ready, () => h.state.explainHint());
     if (r.kind === 'complete') {
+      this.hints.confirm();
       this.move('hint', h.state.hint());
       return;
     }
@@ -607,8 +695,14 @@ export class GameScene extends Phaser.Scene {
     h.session.input();
     if (import.meta.env.DEV) h.log?.add(kind, events);
     // the player's next move, or the second press, takes the hint's reason away (D86), however
-    // little of it shows at that moment (round 2's code audit, DÜŞÜK 2: a pulse-only reason)
+    // little of it shows at that moment (round 2's code audit, DÜŞÜK 2: a pulse-only reason); a
+    // move that did what the reason shows used the hint, any other gives its recharge back (D98)
+    const reason = this.hintFlow.pending;
     const pending = this.hintFlow.move();
+    if (reason && kind !== 'hint') {
+      if (usesReason(reason, events)) this.hints.confirm();
+      else this.hints.refund();
+    }
     if (kind === 'hint' || pending) {
       h.board.clearReason();
       this.updateHud();
@@ -653,7 +747,7 @@ export class GameScene extends Phaser.Scene {
     const laid = this.house.layout.size;
     if (width === laid.width && height === laid.height) return;
     this.dim.setSize(width, height);
-    if (this.phase === 'slide') this.finaleTo(FINALE_MS);
+    if (this.phase === 'slide') this.finaleTo(this.slideAt + SLIDE_MS);
     if (this.phase === 'demo') this.endDemo(false);
     // a next house built for the old size is built again when it slides in
     this.next?.board.destroy();
@@ -662,7 +756,11 @@ export class GameScene extends Phaser.Scene {
     h.board.destroy();
     h.layout = computeLayout(this.scale.gameSize, h.model.n);
     h.board = this.build(h.view, h.layout, h.model);
-    if (this.phase === 'win') h.board.showTime(h.session.seconds);
+    // the card stands again for the new size, its time shown at once (D99)
+    if (this.phase === 'card') {
+      this.card?.destroy();
+      this.card = this.makeCard(false);
+    }
     const reason = this.hintFlow.pending;
     if (reason) h.board.showReason(reason, false);
     this.hud.layoutTo(h.layout);
@@ -710,13 +808,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Writes the house in progress at once: a pause, a hidden page, `pagehide`, the scene's end.
-   * It writes with no change pending too, so the time thought since the last move is kept (audit
-   * 2026-10-21, YÜKSEK 2); a house with no input yet has nothing to keep.
+   * Writes at once: a pause, a hidden page, `pagehide`, the scene's end. In play the house in
+   * progress, with no change pending too, so the time thought since the last move is kept (audit
+   * 2026-10-21, YÜKSEK 2); in every other phase (the finale, the held card, the slide), and in a
+   * house with no input yet, the progress alone, so the hint's recharge is kept (round 3's code
+   * audit, DÜŞÜK 1).
    */
   private flushSave(): void {
     this.cancelSave();
     if (this.inPlay() && this.house.session.started) this.writeSave();
+    else this.writeRecharge();
+  }
+
+  /** The progress with the hint's recharge, no house in progress (D50). */
+  private writeRecharge(): void {
+    this.saving++;
+    void recordHintRecharge(this.hints.remaining).finally(() => {
+      this.saving--;
+    });
   }
 
   /**
@@ -731,6 +840,8 @@ export class GameScene extends Phaser.Scene {
   private writeSave(): void {
     if (!this.inPlay()) return;
     const h = this.house;
+    // the hint's recharge goes with every save (D98)
+    progress.hintReadyIn = this.hints.remaining;
     this.saving++;
     void recordHouseInProgress(h.session.inProgress(h.state)).finally(() => {
       this.saving--;

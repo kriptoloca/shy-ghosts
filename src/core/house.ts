@@ -299,6 +299,44 @@ export function shadowsOf(n: number, objects: string | readonly string[], lamp: 
   return out;
 }
 
+/** Where house 8's demonstration shows the light (D103). */
+export interface LightDemo {
+  /** A lit cell that is not a solution cell and that no resident sees. */
+  cell: number;
+  /** The resident it lies diagonal to, which the copy steps out of; null: the copy fades in. */
+  from: number | null;
+}
+
+/**
+ * The cell of house 8's demonstration (Gate B tune round 3 §7, D103): lit, not a solution cell and
+ * seen by no resident, so the copy there is lit and nothing else (one rule at a time). A cell
+ * diagonal to a resident comes first, so the copy can step out of it; then the nearest to a
+ * resident (Manhattan), then reading order. Null when there is none: the build's lesson test for
+ * house 8 asks for one.
+ */
+export function lightDemoCell(
+  geo: Geometry,
+  givens: readonly number[],
+  solution: readonly number[],
+): LightDemo | null {
+  const n = geo.n;
+  const dr = (a: number, b: number): number => Math.abs(Math.floor(a / n) - Math.floor(b / n));
+  const dc = (a: number, b: number): number => Math.abs((a % n) - (b % n));
+  let best: { cell: number; from: number | null; far: number } | null = null;
+  for (let cell = 0; cell < geo.size; cell++) {
+    if (!geo.lit[cell] || solution.includes(cell)) continue;
+    if (givens.some((g) => (geo.sees[g] ?? []).includes(cell))) continue;
+    const from = givens.find((g) => dr(g, cell) === 1 && dc(g, cell) === 1) ?? null;
+    const far = Math.min(Number.POSITIVE_INFINITY, ...givens.map((g) => dr(g, cell) + dc(g, cell)));
+    const better =
+      best === null ||
+      (from !== null && best.from === null) ||
+      ((from === null) === (best.from === null) && far < best.far);
+    if (better) best = { cell, from, far };
+  }
+  return best === null ? null : { cell: best.cell, from: best.from };
+}
+
 /**
  * Two different cells see each other: both unblocked and in one row or column segment, so room
  * walls and other ghosts never block sight (GDD §3).

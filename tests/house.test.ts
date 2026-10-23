@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { HOUSE_N_MAX as N_MAX, HOUSE_N_MIN as N_MIN } from '../src/config';
 import {
   fromRows,
+  geometry,
   houseErrors,
+  lightDemoCell,
   parseHouse,
   rotate,
   sees,
@@ -232,6 +234,36 @@ describe("shadows (house 10's lesson and its demonstration, D81, D83; round 2's 
     expect(shadowsOf(5, row0('L.FL.'), 0)).toEqual([]);
     expect(shadowsOf(5, row0('L.F.L'), 0)).toEqual([{ cell: 3, shelf: 2 }]);
     expect(shadowsOf(5, row0('L....'), 0)).toEqual([]);
+  });
+});
+
+describe("house 8's demonstration cell (Gate B tune round 3 §7, D103)", () => {
+  // a lamp in the middle of a 5 × 5 grid lights column 2 and row 2; a resident at (1,1)
+  const lampMiddle = geometry(5, ['.....', '.....', '..L..', '.....', '.....'].join(''));
+  const resident = 6;
+
+  it('a lit cell that no resident sees and that is not a solution cell, one diagonal first', () => {
+    // lit: 2, 7, 10, 11, 13, 14, 17, 22; the resident sees 7 and 11; diagonal to it: 2 and 10
+    expect(lightDemoCell(lampMiddle, [resident], [resident])).toEqual({ cell: 2, from: resident });
+    expect(lightDemoCell(lampMiddle, [resident], [resident, 2])).toEqual({
+      cell: 10,
+      from: resident,
+    });
+  });
+
+  it('with no diagonal cell, the nearest to a resident, then reading order; the copy fades in', () => {
+    // 13 and 17 lie 3 cells from the resident, 14 and 22 four
+    expect(lightDemoCell(lampMiddle, [resident], [resident, 2, 10])).toEqual({
+      cell: 13,
+      from: null,
+    });
+  });
+
+  it('none when every lit cell is seen by a resident', () => {
+    // the lamp at (1,0) lights (1,1) only, which the resident at (3,1) sees
+    const g = geometry(5, ['F....', 'L.F..', 'F....', '.....', '.....'].join(''));
+    expect(g.lit.flatMap((l, i) => (l ? [i] : []))).toEqual([6]);
+    expect(lightDemoCell(g, [16], [16])).toBeNull();
   });
 });
 

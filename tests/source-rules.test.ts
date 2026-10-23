@@ -109,14 +109,17 @@ describe('the board draws only with the palette tests/contrast.test.ts holds to 
     ]);
     // demonstrations: the glance's dotted trails and the lamp's light
     expect(colours('src/game/demo-play.ts').filter((c) => !TESTED.includes(c))).toEqual([]);
-    // the reason: a wrong ghost's outline in the marks' ink; the veil (the page colour) and the
-    // pulse only dim or lighten a floor until the next move
+    // the reason: a wrong ghost's outline in the marks' ink, the hint's dots (F6), its digit badges
+    // (tested in contrast.test.ts, D98); its bands, wash and pulse only lighten a floor until the
+    // next move
+    const badges = ['COLOR_HINT_DOT', 'COLOR_BADGE', 'COLOR_BADGE_DIGITS', 'COLOR_DOT_RIM'];
     expect(
       colours('src/game/reason.ts')
-        .filter((c) => !TESTED.includes(c))
+        .filter((c) => !TESTED.includes(c) && !badges.includes(c))
         .sort(),
-    ).toEqual(['COLOR_HINT_PULSE', 'COLOR_PAGE']);
+    ).toEqual(['COLOR_HINT_BAND', 'COLOR_HINT_PULSE']);
     expect(colours('src/game/reason.ts')).toContain('COLOR_MARK');
+    expect(colours('src/game/reason.ts')).toContain('COLOR_HINT_DOT');
   });
 
   it('graybox.ts outlines the bookshelf and the lamp, and draws marks, with the tested colours', () => {
@@ -124,14 +127,17 @@ describe('the board draws only with the palette tests/contrast.test.ts holds to 
     for (const c of ['COLOR_MARK', 'COLOR_FURNITURE_EDGE', 'COLOR_LAMP_EDGE', 'COLOR_HATCH']) {
       expect(used).toContain(c);
     }
-    // the rest belongs to the ghosts, the nightcap and the books (never drawn on a floor), and to
-    // the finale's warm tick and ring of light (feedback over a finished house)
+    // the rest belongs to the ghosts, the nightcap and the books (never drawn on a floor), to
+    // the finale's warm tick and ring of light (feedback over a finished house), and to the
+    // hint's digit badge, its disc and rim (tested in contrast.test.ts, D98)
     expect(
       used.filter(
         (c) =>
           !TESTED.includes(c) &&
           !/^COLOR_(GHOST|CAP|SHELF|BOOKS)/.test(c) &&
-          c !== 'COLOR_SOLVED_FRAME',
+          c !== 'COLOR_SOLVED_FRAME' &&
+          c !== 'COLOR_BADGE' &&
+          c !== 'COLOR_DOT_RIM',
       ),
     ).toEqual([]);
   });

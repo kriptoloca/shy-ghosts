@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import {
+  AFTERIMAGE_ALPHA,
+  AFTERIMAGE_MS,
   CARRY_SCALE,
   COLOR_FLOORS,
   COLOR_FLOOR_INKS,
@@ -12,11 +14,11 @@ import {
   COLOR_SETTLE_VEIL,
   COLOR_SOLVED_FRAME,
   COLOR_WALL,
-  COLOR_WIN_DIGITS,
   FLOOR_MARGIN,
   GHOST_SHARE,
   GLANCE_ALPHA,
   GLANCE_MS,
+  GLIDE_LEAN_DEG,
   GLIDE_MS,
   GLOW_IN_MS,
   GLOW_OUT_MS,
@@ -50,10 +52,7 @@ import {
   SETTLE_VEIL_MS,
   SHIVER_PX,
   SHIVER_SWINGS,
-  WIN_DIGITS_FONT,
-  WIN_DIGITS_MS,
   WIN_BEAT_MS,
-  WIN_DIGITS_SIZE,
   WIN_FLASH_FROM,
   WIN_FLASH_MS,
   WIN_FLASH_TO,
@@ -92,11 +91,9 @@ import {
   markKey,
   pixelKey,
 } from './graybox';
-import { cellAt, cellCenter, timeBox, type Layout } from './layout';
+import { cellAt, cellCenter, type Layout } from './layout';
 import {
-  TickingTime,
   clipPolygon,
-  clockText,
   dotsBetween,
   hatch,
   ringSegments,
@@ -107,7 +104,7 @@ import {
   type RoomStyle,
 } from './look';
 import { Pool } from './pool';
-import { ReasonDisplay } from './reason';
+import { ReasonDisplay, type ReasonPicture } from './reason';
 import { shiverTween } from './shiver';
 import { Timeline } from './timeline';
 import type { BoardView, ViewState } from './view';
@@ -199,8 +196,6 @@ export class BoardDisplay {
   private readonly ghosts = new Map<number, GhostSprite>();
   private readonly top: Phaser.GameObjects.Container;
   private readonly frame: Phaser.GameObjects.Container;
-  /** The solve time below the board (D85), shown in the finale. */
-  private readonly time: Phaser.GameObjects.Text;
   /** Motions the screen must finish before it equals the rules (the e2e waits for none). */
   private readonly moving = new Set<Phaser.Tweens.Tween>();
   private readonly tweens = new Set<Phaser.Tweens.Tween>();
@@ -224,9 +219,11 @@ export class BoardDisplay {
    * The dev hooks' record (DEV builds only): how many ghosts still played a settle's motion (its
    * pop, bob or content pop) when the finale's ghosts began to hop (round 2's code audit, DÜŞÜK 4).
    */
-  private readonly dev: { settlingAtHop: number | null } | null = import.meta.env.DEV
-    ? { settlingAtHop: null }
-    : null;
+  private readonly dev: {
+    settlingAtHop: number | null;
+    /** The relocation afterimages on screen, by the cell each stands on (D100). */
+    afterimages: Map<Phaser.GameObjects.Image, number>;
+  } | null = import.meta.env.DEV ? { settlingAtHop: null, afterimages: new Map() } : null;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -369,7 +366,9 @@ export class BoardDisplay {
     this.dotsRow = new ProgressDots(scene, layout, styles, view.glowing, this.dotMotions);
     this.keys.push(...this.dotsRow.keys);
     this.root.add(this.dotsRow.root);
-    this.reason = new ReasonDisplay(scene, layout, h, this.glowLayer, this.fx);
+    this.reason = new ReasonDisplay(scene, layout, h, this.glowLayer, this.fx, (c) =>
+      this.floorOf(c),
+    );
     this.demoPlayer = new DemoPlayer({
       scene,
       layout,
@@ -428,17 +427,6 @@ export class BoardDisplay {
       this.frame.add(scene.add.image(x, y, warm).setOrigin(0, 0).setDisplaySize(w, len));
     }
     this.frame.setAlpha(view.solved ? 1 : 0);
-    const t = timeBox(layout);
-    this.time = scene.add
-      .text(t.x + t.width / 2, t.y + t.height / 2, clockText(0), {
-        fontFamily: WIN_DIGITS_FONT,
-        fontSize: `${String(WIN_DIGITS_SIZE)}px`,
-        fontStyle: 'bold',
-        color: COLOR_WIN_DIGITS,
-      })
-      .setOrigin(HALF)
-      .setVisible(false);
-    this.root.add(this.time);
     this.drawLines();
   }
 
@@ -592,11 +580,11 @@ export class BoardDisplay {
    * The finale (GDD §3a, D73, D84), about 2.4 s: after the hit stop the rooms flash in reading
    * order, each brighter than the last, each with a tick larger and higher than the last (the
    * rising ticks); then a ring of light runs from the board's middle to its frame, every ghost
-   * hops and turns to the camera, then waves twice, and the solve time (`seconds`) ticks in below
-   * the board. Its length is the scene's (WIN_BEAT_MS), so a new board for a new screen size never
-   * cuts it short (that board shows the time at once: `showTime`).
+   * hops and turns to the camera, then waves twice; the solve time ticks in on the held result card
+   * that follows (src/game/card.ts, D99). Its length is the scene's (WIN_BEAT_MS), so a new board
+   * for a new screen size never cuts it short.
    */
-  celebrate(seconds: number): void {
+  celebrate(): void {
     const h = this.view.house;
     const rooms = h.roomCount;
     const step = Math.min(WIN_STEP_MAX_MS, WIN_SWEEP_MS / rooms);
@@ -647,7 +635,6 @@ export class BoardDisplay {
           onStop: () => s.body.setScale(s.rest),
         });
       }
-      this.tickTime(seconds);
     });
     this.later(hopAt + WIN_HOP_MS, () => {
       for (const s of this.ghosts.values()) {
@@ -668,16 +655,23 @@ export class BoardDisplay {
     });
   }
 
-  /** The solve time below the board at once (a board built again during the finale). */
-  showTime(seconds: number): void {
-    this.frame.setAlpha(1);
-    this.time.setText(clockText(seconds)).setVisible(true);
-    this.fitTime();
-  }
-
-  /** The solve time on screen, or null (dev hooks). */
-  shownTime(): string | null {
-    return this.time.visible ? this.time.text : null;
+  /**
+   * The ghosts' sprites as drawn now and the relocation afterimages (dev hooks: the glide's frame
+   * test, D100); null in production builds.
+   */
+  sprites(): {
+    ghosts: { x: number; y: number; angle: number }[];
+    afterimages: { cell: number; alpha: number }[];
+  } | null {
+    if (!import.meta.env.DEV || !this.dev) return null;
+    return {
+      ghosts: [...this.ghosts.values()].map((s) => ({
+        x: s.root.x,
+        y: s.root.y,
+        angle: s.body.angle,
+      })),
+      afterimages: [...this.dev.afterimages].map(([img, cell]) => ({ cell, alpha: img.alpha })),
+    };
   }
 
   /** Ghosts still in a settle's motion when the finale's ghosts began to hop (dev hooks). */
@@ -717,11 +711,19 @@ export class BoardDisplay {
     else c.sprite.root.setScale(1);
   }
 
-  /** The hint's first press (D74): its reason, and a wrong ghost trembles. */
-  showReason(r: HintExplain, tremble = true): void {
-    this.reason.show(r);
+  /**
+   * The hint's first press (D74, D98): its reason in beats, and a wrong ghost trembles; not
+   * `fresh` (a new board for a new screen size), the whole picture at once and no tremble.
+   */
+  showReason(r: HintExplain, fresh = true): void {
+    this.reason.show(r, fresh);
     const s = r.kind === 'remove' ? this.ghosts.get(r.cell) : undefined;
-    if (s && tremble) this.shiver(s, SHIVER_PX, HINT_TREMBLE_SWINGS);
+    if (s && fresh) this.shiver(s, SHIVER_PX, HINT_TREMBLE_SWINGS);
+  }
+
+  /** What the reason has drawn so far (dev hooks, `visible()`), or null. */
+  reasonPicture(): ReasonPicture | null {
+    return this.reason.drawn();
   }
 
   clearReason(): void {
@@ -1062,6 +1064,11 @@ export class BoardDisplay {
     );
   }
 
+  /**
+   * A ghost glides to `to` (D100): GLIDE_MS, ease in-out, leaning toward its way and straight on
+   * arrival, a see-through afterimage fading on the cell it left; a carried ghost put back (`to`
+   * its own cell) only glides.
+   */
   private glide(from: number, to: number): void {
     const s = this.ghosts.get(from);
     if (!s) return;
@@ -1069,6 +1076,16 @@ export class BoardDisplay {
     this.ghosts.set(to, s);
     this.settle(s);
     const at = cellCenter(this.layout, to);
+    let lean = 0;
+    if (from !== to) {
+      this.afterimage(from, s.body.texture.key);
+      const was = cellCenter(this.layout, from);
+      const way = at.x !== was.x ? at.x - was.x : at.y - was.y;
+      lean = Math.sign(way) * GLIDE_LEAN_DEG;
+    }
+    const straight = (): void => {
+      s.body.setAngle(0);
+    };
     s.motion = this.tween(
       {
         targets: s.root,
@@ -1076,10 +1093,31 @@ export class BoardDisplay {
         y: at.y,
         duration: GLIDE_MS,
         ease: 'Sine.easeInOut',
-        onStop: () => s.root.setPosition(at.x, at.y),
+        onUpdate: (t: Phaser.Tweens.Tween) =>
+          s.body.setAngle(lean * Math.sin(Math.PI * t.progress)),
+        onComplete: straight,
+        onStop: () => {
+          s.root.setPosition(at.x, at.y);
+          straight();
+        },
       },
       true,
     );
+  }
+
+  /** A see-through copy of a ghost on the cell it left, fading (D100). */
+  private afterimage(cell: number, key: string): void {
+    const at = cellCenter(this.layout, cell);
+    const size = this.layout.cell * GHOST_SHARE;
+    const img = this.scene.add.image(at.x, at.y, key).setDisplaySize(size, size);
+    img.setAlpha(AFTERIMAGE_ALPHA);
+    this.fx.add(img);
+    this.dev?.afterimages.set(img, cell);
+    const gone = (): void => {
+      this.dev?.afterimages.delete(img);
+      img.destroy();
+    };
+    this.tween({ targets: img, alpha: 0, duration: AFTERIMAGE_MS, onComplete: gone, onStop: gone });
   }
 
   private remove(c: number): void {
@@ -1303,33 +1341,5 @@ export class BoardDisplay {
       ease: 'Sine.easeOut',
       onComplete: () => ring.setVisible(false),
     });
-  }
-
-  /** The solve time ticks in below the board, from 0:00 up to `seconds` (D73, D85). */
-  private tickTime(seconds: number): void {
-    const count = { v: 0 };
-    const digits = new TickingTime();
-    const show = (v: number): void => {
-      const text = digits.next(v);
-      if (text === null) return;
-      this.time.setText(text);
-      this.fitTime();
-    };
-    show(0);
-    this.time.setVisible(true);
-    this.tween({
-      targets: count,
-      v: seconds,
-      duration: WIN_DIGITS_MS,
-      onUpdate: () => show(count.v),
-      onComplete: () => show(seconds),
-    });
-  }
-
-  /** A long solve time is drawn smaller, so it stays inside its box (src/game/layout.ts). */
-  private fitTime(): void {
-    const box = timeBox(this.layout);
-    this.time.setScale(1);
-    this.time.setScale(Math.min(1, box.width / Math.max(1, this.time.width)));
   }
 }

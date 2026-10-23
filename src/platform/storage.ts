@@ -1,4 +1,4 @@
-import { HOUSE_N_MAX } from '../config';
+import { HINT_COOLDOWN_S, HOUSE_N_MAX } from '../config';
 import { TimeoutError, withTimeout } from './timeout';
 
 /**
@@ -7,8 +7,11 @@ import { TimeoutError, withTimeout } from './timeout';
  * throws into gameplay.
  */
 
-/** v1 holds what the graybox needs; v2 (Epic 5) adds the meta and daily fields (D31). */
-export const SAVE_VERSION = 1;
+/**
+ * v1 holds what the graybox needs; v2 adds the hint's recharge (Gate B tune round 3, D98); the meta
+ * and daily fields of Epic 5 come in a later version (D31).
+ */
+export const SAVE_VERSION = 2;
 export const SAVE_KEY = 'shy-ghosts:save';
 /** Cells of the largest house (9 × 9, GDD §3): every stored ghost and mark index is below it. */
 export const CELLS_MAX = HOUSE_N_MAX * HOUSE_N_MAX;
@@ -39,6 +42,8 @@ export interface SaveData {
   current: HouseInProgress | null;
   sound: boolean;
   music: boolean;
+  /** v2: seconds of play until the hint is ready, 0 to HINT_COOLDOWN_S (D98). */
+  hintReadyIn: number;
 }
 
 /**
@@ -92,6 +97,7 @@ export function defaultSave(): SaveData {
     current: null,
     sound: true,
     music: true,
+    hintReadyIn: 0,
   };
 }
 
@@ -145,10 +151,17 @@ export function versionOf(raw: unknown): number | null {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : null;
 }
 
+/** The hint's recharge as stored: seconds within 0 and the cooldown, else 0 (ready; D98). */
+function readyIn(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v)
+    ? Math.min(HINT_COOLDOWN_S, Math.max(0, v))
+    : 0;
+}
+
 /**
- * Coerces whatever was stored into a valid v1 SaveData. Any version ≥ 1 is read for the v1
- * fields, since every later version only adds fields (D31, D47); no version, or a broken one,
- * starts fresh.
+ * Coerces whatever was stored into a valid SaveData of this version. Any version ≥ 1 is read for
+ * the fields this version knows, since every later version only adds fields (D31, D47); a v1 save
+ * has the hint ready; no version, or a broken one, starts fresh.
  */
 export function migrate(raw: unknown): SaveData {
   const d = defaultSave();
@@ -162,6 +175,7 @@ export function migrate(raw: unknown): SaveData {
     current: inProgress(r.current, house),
     sound: bool(r.sound, d.sound),
     music: bool(r.music, d.music),
+    hintReadyIn: readyIn(r.hintReadyIn),
   };
 }
 
@@ -177,7 +191,7 @@ export const LATE_READ_MAX_MS = 30_000;
  * A save read late meets the progress made meanwhile: the furthest house wins, and the house in
  * progress is the one of that house (this session's when both are, since it is on screen); the
  * settings come from the stored save (a toggle made during a slow first read is the only thing
- * lost).
+ * lost); the longer hint recharge is kept, so a reload never resets it (D98).
  */
 export function mergeSaves(stored: SaveData, local: SaveData): SaveData {
   const house = Math.max(stored.house, local.house);
@@ -194,6 +208,7 @@ export function mergeSaves(stored: SaveData, local: SaveData): SaveData {
     current: current ? copyInProgress(current) : null,
     sound: stored.sound,
     music: stored.music,
+    hintReadyIn: Math.max(stored.hintReadyIn, local.hintReadyIn),
   };
 }
 

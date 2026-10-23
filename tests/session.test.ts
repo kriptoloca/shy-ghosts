@@ -3,7 +3,8 @@ import { DEMO_IDLE_MS, DEMO_REPLAYS, DEMO_SKIP_FROM_MS, HINT_COOLDOWN_S } from '
 import { parseHouse } from '../src/core/house';
 import { PlayState } from '../src/core/state';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
-import { DemoClock, HintClock, HintFlow, HouseSession } from '../src/game/session';
+import type { HintExplain } from '../src/core/hint';
+import { DemoClock, HintClock, HintFlow, HouseSession, usesReason } from '../src/game/session';
 
 /** The house in progress (GDD §3.2, §9, §14): solve time, moves, hints, conflicts; the hint clock (D32). */
 const house3 = (): PlayState =>
@@ -93,6 +94,91 @@ describe('HintClock (the free hint, D32)', () => {
     h.tick(1000);
     expect(h.ready).toBe(true);
     expect(h.share).toBe(0);
+  });
+});
+
+describe('HintClock: the recharge waits for the hint to be used (Gate B tune round 3 §2, D98)', () => {
+  const S = 1000;
+
+  it('a move that clears the reason before the hint is used gives the recharge back', () => {
+    const h = new HintClock();
+    h.used(); // the first press
+    expect([h.ready, h.remaining]).toEqual([false, HINT_COOLDOWN_S]);
+    h.tick(5 * S);
+    h.refund(); // a tap elsewhere took the reason away
+    expect([h.ready, h.remaining, h.share]).toEqual([true, 0, 0]);
+  });
+
+  it('a refund restores the ready time from before the press, whatever it was', () => {
+    const h = new HintClock();
+    h.restore(30); // 30 s left from the save
+    h.tick(30 * S); // ready now
+    h.used();
+    h.refund();
+    expect(h.ready).toBe(true);
+    // with nothing pending, a refund changes nothing
+    h.used();
+    h.confirm();
+    h.refund();
+    expect(h.remaining).toBe(HINT_COOLDOWN_S);
+  });
+
+  it('the cooldown starts when the hint is used (the second press), not at the first press', () => {
+    const h = new HintClock();
+    h.used();
+    h.tick(10 * S);
+    expect(h.remaining).toBe(HINT_COOLDOWN_S - 10);
+    h.confirm();
+    expect(h.remaining).toBe(HINT_COOLDOWN_S);
+    h.tick((HINT_COOLDOWN_S - 1) * S);
+    expect(h.ready).toBe(false);
+    h.tick(S);
+    expect(h.ready).toBe(true);
+  });
+
+  it('the save keeps the recharge: restore sets the seconds left, within 0 and the cooldown', () => {
+    const h = new HintClock();
+    h.restore(50);
+    expect([h.ready, h.remaining]).toEqual([false, 50]);
+    h.tick(20 * S);
+    expect(h.remaining).toBe(30);
+    h.restore(-4);
+    expect(h.remaining).toBe(0);
+    h.restore(HINT_COOLDOWN_S + 30);
+    expect(h.remaining).toBe(HINT_COOLDOWN_S);
+    h.restore(Number.NaN);
+    expect(h.remaining).toBe(0);
+  });
+});
+
+describe("usesReason: the player's own move used the hint (D98)", () => {
+  const place: HintExplain = {
+    kind: 'place',
+    room: 2,
+    cell: 9,
+    segments: [],
+    rooms: [2],
+    beats: [],
+  };
+  const remove: HintExplain = { kind: 'remove', cell: 4 };
+
+  it('a ghost put on the cell the reason shows: placed, dragged or moved there in its room', () => {
+    expect(usesReason(place, [{ type: 'placed', cell: 9, room: 2 }])).toBe(true);
+    expect(usesReason(place, [{ type: 'relocated', from: 8, to: 9, room: 2 }])).toBe(true);
+    expect(usesReason(place, [{ type: 'moved', from: 3, to: 9, fromRoom: 0, toRoom: 2 }])).toBe(
+      true,
+    );
+    // elsewhere in its room, or another room, is not the hint's ghost
+    expect(usesReason(place, [{ type: 'placed', cell: 8, room: 2 }])).toBe(false);
+    expect(usesReason(place, [{ type: 'placed', cell: 1, room: 0 }])).toBe(false);
+    expect(usesReason(place, [{ type: 'marked', cells: [9], on: true }])).toBe(false);
+  });
+
+  it('the wrong ghost the reason outlines taken away, or moved off its cell', () => {
+    expect(usesReason(remove, [{ type: 'removed', cell: 4, room: 1 }])).toBe(true);
+    expect(usesReason(remove, [{ type: 'relocated', from: 4, to: 5, room: 1 }])).toBe(true);
+    expect(usesReason(remove, [{ type: 'removed', cell: 7, room: 3 }])).toBe(false);
+    expect(usesReason(remove, [])).toBe(false);
   });
 });
 
@@ -208,5 +294,23 @@ describe('DemoClock: when a demonstration plays again, and when a tap may skip i
     d.idle(DEMO_IDLE_MS);
     d.started(true, 50);
     expect(d.skippable()).toBe(true);
+  });
+});
+
+describe('HintClock.adopt (a save that landed after the boot, D47, D98)', () => {
+  it("a longer recharge takes over, a shorter one or a broken one changes nothing (round 3's code audit, DÜŞÜK 2)", () => {
+    const c = new HintClock();
+    c.restore(20);
+    c.adopt(10);
+    expect(c.remaining).toBe(20);
+    c.adopt(Number.NaN);
+    expect(c.remaining).toBe(20);
+    c.adopt(60);
+    expect(c.remaining).toBe(60);
+    c.tick(1000);
+    expect(c.remaining).toBe(59);
+    // over the cooldown reads as the cooldown, as restore does
+    c.adopt(HINT_COOLDOWN_S + 5);
+    expect(c.remaining).toBe(HINT_COOLDOWN_S);
   });
 });

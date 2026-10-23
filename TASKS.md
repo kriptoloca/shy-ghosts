@@ -96,8 +96,9 @@ to what the graybox needs (D2).
     0–2 < 4–6 < 8–10, then within ±15 % of the capped cycles' mean.
   - A5 tutorial order: houses 1–3, 4, 5, 7, 8 and 34 teach their element as GENERATOR.md §9
     says (were 9, 12 and 17; D82).
-  - A6 estimated solve time per band: the median ceilings of GENERATOR.md §9; every house among
-    1–16 ≤ 130 s; dailies 120–200 s.
+  - A6 estimated solve time per band: the median ceilings of GENERATOR.md §9 (houses 8–24 as
+    amended by D91, values D97); every house among 1–7 ≤ 130 s and among 8–16 ≤ 155 s; dailies
+    120–200 s.
   - A7 the naive player fails most mid and late houses: ≤ 0.35 on every hard house, cycle
     position 1–9 and daily, ≤ 0.25 on every manor; mean ≤ 0.25 and below 0.5 on ≥ 90 % of houses
     12–1000 and dailies; shallow ≤ 0.60 on every T3 house (mean ≤ 0.40); blind ≤ 0.01.
@@ -202,7 +203,8 @@ to what the graybox needs (D2).
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
   - [ ] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
         docs/gate-b-round3.md); Hasan approved a third tune round, the last (D91: depth from
-        house 8, A6's ceilings for 8–24 may rise); round 4 follows, and a fail ends the game
+        house 8, A6's ceilings for 8–24 may rise); its build is below; round 4 follows, and a
+        fail ends the game
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
@@ -278,6 +280,43 @@ to what the graybox needs (D2).
         and B6 pass; B5 fails (interest median 3 of 5 over houses 4–20, bar 3.5; houses 11–20
         median 3 below houses 4–10's 4); B7 fails (verdict NO, Flow 2, Fair 4). The work stops;
         the report and the per-house table: docs/gate-b-round3.md
+
+- **Gate B tune round 3, the last** (D91, Hasan's exception to the two-round rule; the plan:
+  docs/gate-b-round3.md, "Tune round 3"; decisions D92–D103; Gate B's bars B1–B7 and every Gate A
+  threshold unchanged but A6's ceilings for houses 8–24, D97). Each task's tests were seen failing
+  first. Built 2026-10-23, uncommitted.
+  - [x] 1 the depth profile (`src/gen/depth.ts`, `DEPTH_RANK`; `tests/depth.test.ts`, calibrated
+        on the list round 3 played, `tests/fixtures/round3-houses.json`)
+  - [x] 2 the deepening search (`src/gen/deepen.ts`, its weights and walk constants in
+        `params.ts`; `tests/deepen.test.ts`)
+  - [x] 3 the ladder: rungs 8–24, the opener and pattern history, `LADDER_STARTS`, house 8's
+        demonstration cell, `npm run levels:starts`; rebuild (`params.ts`, `build-levels.ts`,
+        `core/house.ts`, `scripts/levels.mjs`; `tests/round3.test.ts`, which replaces round 2's
+        seven ladder tests): houses 8–24 byte for byte the prototype's, houses 1–7, 25–1000 and
+        the dailies round 3's; `npm run levels` 198.9 s
+  - [x] 4 Gate A's A6 split for houses 8–24 (`tests/gate-a.test.ts`, 43 of 43; GENERATOR §9; D97)
+  - [x] 5 the hint: the reason in beats with digits and dots, the recharge refunded when a move
+        clears it, the recharge saved, save v2 (`core/hint.ts`, `game/reason.ts`, `session.ts`,
+        `platform/storage.ts`, `GameScene.ts`, `visible.ts`; unit and e2e)
+  - [x] 6 the held result card (`game/card.ts`, `layout.ts`, `GameScene.ts`, `visible.ts`; layout
+        tests and e2e; the e2e that cross a finale tap through the card)
+  - [x] 7 the relocation glide: 320 ms, a lean, an afterimage (`board.ts`; the frame e2e in
+        `tests/e2e/timing.spec.ts`; GDD §3a)
+  - [x] 8 swatch rule S1 and the lit stripes outlined on both sides (`look.ts`, `config.ts`;
+        `tests/look.test.ts`, F5b in `tests/contrast.test.ts`)
+  - [x] 9 the centred landscape (`layout.ts`; `tests/layout.test.ts`)
+  - [x] 10 house 8's demonstration copy on a lit cell no resident sees (`demo.ts`;
+        `tests/demo.test.ts`)
+  - [x] 11 docs: GDD §2, §3.1–§3.3, §3a, §11, §12; GENERATOR §4.8, §6, §6.2, §7, §8, §9, §10.3;
+        docs/questions.md D92–D103; docs/gate-b-round3.md (the plan); PROGRESS
+  - [x] 12 gates: `npm run check`, `npm test`, `npm run levels:check`, `npm run build`,
+        `npm run e2e` (none retried), `npm run size`; the design critique of the swatch rule and
+        the card (docs/PROGRESS.md)
+  - [x] `code-review`, the adversarial audit and the auditor's A9 re-run (2026-10-23: Gate A
+        A1–A9 passed on the auditor's own checker; the code audit 1 KRİTİK, 1 ORTA, 5 DÜŞÜK, the
+        A9 re-run 2 DÜŞÜK; every finding fixed red first, docs/PROGRESS.md "Reviews and audits")
+  - [ ] the commit; round 4, the last (the protocol of docs/gate-b-round2.md §9); a fail ends
+        Shy Ghosts (D91)
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B
 - `game/feel.ts` (every GDD §3a value as a named constant), procedural textures (ghost states,

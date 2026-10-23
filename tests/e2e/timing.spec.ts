@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { SLIDE_MS, WIN_BEAT_MS } from '../../src/config';
+import { RESULT_IN_MS, SLIDE_MS, WIN_BEAT_MS } from '../../src/config';
 import { demoFor } from '../../src/game/demo';
 import {
   CANVAS,
@@ -10,7 +10,17 @@ import {
   test,
   waitState,
 } from './helpers';
-import { center, corner, house, model, open, settledEqualsRules, solve, tap } from './play';
+import {
+  center,
+  continueCard,
+  corner,
+  house,
+  model,
+  open,
+  settledEqualsRules,
+  solve,
+  tap,
+} from './play';
 
 /**
  * What the game does on the wall clock (D70, D73, D83, D84; round 1's code
@@ -22,9 +32,14 @@ import { center, corner, house, model, open, settledEqualsRules, solve, tap } fr
  */
 test.use({ quietConsole: [SOFTWARE_WEBGL_REPORT] });
 
-/** The finale, from the last placement to the next house: about 2.4 s (D84). */
-const FINALE_MS = WIN_BEAT_MS + SLIDE_MS;
+/**
+ * The finale (D84), then the held result card (D99): the card is up within its length (the beat
+ * and the card's rise) and FINALE_SLACK_MS of the last placement, and after the tap that
+ * continues, the next house slides in for SLIDE_MS; each on the wall clock within the same slack
+ * round 1's whole-finale check allowed (round 3's code audit, KRİTİK 1).
+ */
 const FINALE_SLACK_MS = 200;
+const CARD_UP_MAX_MS = WIN_BEAT_MS + RESULT_IN_MS + FINALE_SLACK_MS;
 /** A measured beat or demonstration ends within a frame or two of its length. */
 const FRAME_SLACK_MS = 50;
 /** The motion watch reads on this long past its end, so its last frame is closed. */
@@ -32,20 +47,24 @@ const MOTION_TAIL_MS = 150;
 /** Input opens this soon after a demonstration ends: a frame or two, and a busy frame. */
 const OPEN_SLACK_MS = 250;
 
-test('the finale lasts 2.4 ± 0.2 s from the last placement to the next house; the beat its length (D73, D84)', async ({
+test('the beat lasts its length, the card is up within its length and 200 ms of the last placement, and after a tap the slide lasts its length (D73, D84, D99)', async ({
   page,
 }) => {
   await open(page, 'reset=1&house=12');
   await solve(page);
+  await continueCard(page);
   const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
   const f = next.finale;
   if (!f) throw new Error('no finale measured');
-  // the beat as measured when the slide began, on the scene's clock, within a frame or two of its
-  // length; all of it on the wall clock. The clock's step in the frame the slide began is logged
-  // (this project runs without the GPU flags: the Canvas renderer draws every 14–23 ms here)
+  // the beat as measured when the card began, on the scene's clock, within a frame or two of its
+  // length; the card up and the slide on the wall clock. The clock's step in the frame the card
+  // began is logged (this project runs without the GPU flags: the Canvas renderer draws every
+  // 14–23 ms here)
   console.log(`finale ${JSON.stringify(f)}`);
   expect(Math.abs(f.beatMs - WIN_BEAT_MS)).toBeLessThanOrEqual(FRAME_SLACK_MS);
-  expect(Math.abs(f.wallMs - FINALE_MS)).toBeLessThanOrEqual(FINALE_SLACK_MS);
+  expect(f.cardUpMs).toBeLessThanOrEqual(CARD_UP_MAX_MS);
+  expect(f.cardUpMs).toBeGreaterThanOrEqual(WIN_BEAT_MS + RESULT_IN_MS - FRAME_SLACK_MS);
+  expect(Math.abs(f.slideWallMs - SLIDE_MS)).toBeLessThanOrEqual(FINALE_SLACK_MS);
 });
 
 test('a tap 700 ms into the finale cuts the beat there', async ({ page }) => {
@@ -55,6 +74,8 @@ test('a tap 700 ms into the finale cuts the beat there', async ({ page }) => {
   await solve(page);
   await waitState(page, (s) => (s.beatMs ?? 0) >= LATE_MS, '700 ms into the finale');
   await page.mouse.click(away.x, away.y);
+  // the card comes at once and holds (D99); a tap after its guard continues
+  await continueCard(page);
   const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
   const beat = next.finale?.beatMs ?? Infinity;
   expect(beat).toBeGreaterThanOrEqual(LATE_MS);
@@ -116,6 +137,7 @@ for (const id of [1, 2]) {
   }) => {
     await open(page, `reset=1&house=${String(id)}`);
     await solve(page);
+    await continueCard(page);
     const next = await waitState(
       page,
       (s) => s.shown === id + 1 && (s.phase === 'play' || s.phase === 'demo'),
@@ -124,6 +146,84 @@ for (const id of [1, 2]) {
     expect(next.finale?.settling).toBe(0);
   });
 }
+
+/**
+ * A relocation reads as a move (Gate B tune round 3 §4, D100): the ghost glides GLIDE_MS, so a frame
+ * read every 30 ms shows it between its two cells at least three times; a see-through afterimage
+ * stays on the cell it left for ≥ 200 ms; it leans toward its way and stands straight on arrival.
+ */
+test('a relocation glides: ≥ 3 frames between the two cells, an afterimage on the old cell ≥ 200 ms, a lean (D100)', async ({
+  page,
+}) => {
+  const SAMPLE_MS = 30;
+  const WATCH_MS = 900;
+  await open(page, 'reset=1&house=12');
+  const h = await house(page);
+  const m = model(h);
+  // two unlit empty cells of one room, two columns apart: a ghost on one, then a tap on the other
+  const pair = (() => {
+    for (const cells of m.roomCells) {
+      const free = cells.filter((c) => m.candidate[c]);
+      for (const a of free) {
+        const b = free.find((c) => Math.abs((c % m.n) - (a % m.n)) >= 2);
+        if (b !== undefined) return [a, b] as const;
+      }
+    }
+    throw new Error('no pair');
+  })();
+  const [a, b] = pair;
+  await tap(page, a);
+  await settledEqualsRules(page);
+  const rest = await page.evaluate(() => window.__ghostDebug?.sprites?.()?.ghosts[0] ?? null);
+  if (!rest) throw new Error('no ghost drawn');
+  await page.evaluate(
+    ({ every, watch }) => {
+      const out: { t: number; s: unknown }[] = [];
+      (window as unknown as { __frames: typeof out }).__frames = out;
+      const t0 = performance.now();
+      const id = setInterval(() => {
+        out.push({ t: performance.now() - t0, s: window.__ghostDebug?.sprites?.() ?? null });
+        if (performance.now() - t0 > watch) clearInterval(id);
+      }, every);
+    },
+    { every: SAMPLE_MS, watch: WATCH_MS },
+  );
+  await tap(page, b);
+  await page.waitForTimeout(WATCH_MS + MOTION_TAIL_MS);
+  const frames = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __frames: {
+            t: number;
+            s: {
+              ghosts: { x: number; y: number; angle: number }[];
+              afterimages: { cell: number; alpha: number }[];
+            } | null;
+          }[];
+        }
+      ).__frames,
+  );
+  const end = frames.at(-1)?.s?.ghosts[0];
+  if (!end) throw new Error('no ghost at the end');
+  const near = (p: { x: number; y: number }, q: { x: number; y: number }): boolean =>
+    Math.hypot(p.x - q.x, p.y - q.y) < 1;
+  const between = new Set(
+    frames
+      .map((f) => f.s?.ghosts[0])
+      .filter((g): g is { x: number; y: number; angle: number } => g !== undefined)
+      .filter((g) => !near(g, rest) && !near(g, end))
+      .map((g) => `${g.x.toFixed(1)},${g.y.toFixed(1)}`),
+  );
+  const after = frames.filter((f) => f.s?.afterimages.some((x) => x.cell === a && x.alpha > 0));
+  const lasted = after.length > 0 ? (after.at(-1)?.t ?? 0) - (after[0]?.t ?? 0) : 0;
+  const leaned = frames.some((f) => Math.abs(f.s?.ghosts[0]?.angle ?? 0) > 1);
+  console.log(`glide: ${String(between.size)} frames between, afterimage ${lasted.toFixed(0)} ms`);
+  expect(between.size).toBeGreaterThanOrEqual(3);
+  expect(lasted).toBeGreaterThanOrEqual(200);
+  expect(leaned).toBe(true);
+  expect(end.angle).toBe(0);
+});
 
 /** The board's square on the canvas, in canvas (design) px under the Canvas renderer. */
 async function boardBox(

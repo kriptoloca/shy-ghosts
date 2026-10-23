@@ -2,14 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseModel } from '../src/core/house';
-import {
-  AP_FULL,
-  apOpening,
-  apProfile,
-  freebie,
-  openingOf,
-  type ApOptions,
-} from '../src/gen/autopilot';
+import { AP_FULL, apOpening, apProfile, openingOf, type ApOptions } from '../src/gen/autopilot';
 import {
   eachLightNeeded,
   furnitureBetween,
@@ -25,10 +18,12 @@ import { withMeta, type House, type HouseMeta, type PlayHouse } from '../src/gen
 
 /**
  * Gate B tune round 2 (docs/gate-b-round2.md §1, D80–D82): the ladder of houses 4–24, measured by
- * the autopilot (src/gen/autopilot.ts). Every house 4–20 but the rest at 15 either teaches one new
- * pattern or rule, or opens with a real insight; no free opening after house 10 but house 17's
- * lesson; no two houses in a row open alike; the shelf, the count and the lamp come at 5, 7 and 8
- * (Gate A's A3/A5 positions as amended, D82). From house 25 the list is round 1's.
+ * the autopilot (src/gen/autopilot.ts). Houses 4–10 each teach one new pattern or rule, or open
+ * with a real insight; no two houses in a row open alike; the shelf, the count and the lamp come
+ * at 5, 7 and 8 (Gate A's A3/A5 positions as amended, D82). From house 25 the list is round 1's.
+ * Tune round 3 rebuilt houses 8–24 for depth (D93): its ladder tests (tests/round3.test.ts)
+ * replace round 2's on the roles, the boards, the insight openings, house 12's cross, the free
+ * openings and each lesson's novelty, which the deeper houses no longer keep.
  */
 const read = <T>(name: string): T =>
   JSON.parse(readFileSync(new URL(`../src/data/${name}`, import.meta.url), 'utf8')) as T;
@@ -98,21 +93,7 @@ function measure(): Measure[] {
   });
 }
 
-/** §1.3: the lesson of each teaching house. */
-const LESSONS: Record<number, string> = {
-  4: 'claim',
-  5: 'shelf',
-  6: 'split budget',
-  8: 'light',
-  10: 'shadow',
-  16: 'three in a line',
-  17: 'lit-line budget',
-  18: 'two lamps',
-};
-/** §1.3: the houses that open with a real insight (the hard houses). */
-const INSIGHT = [7, 9, 11, 12, 13, 14, 19, 20, 21, 22];
-
-describe('round 2 (a): every house 4–20 teaches something or asks for a real insight', () => {
+describe('round 2 (a): every house 4–10 teaches something or asks for a real insight', () => {
   const M = measure();
   const at = (id: number): Measure => M[id - 1] as Measure;
   const idle = (a: number, b: number): number[] =>
@@ -120,39 +101,6 @@ describe('round 2 (a): every house 4–20 teaches something or asks for a real i
 
   it('houses 4–10: none is finished on autopilot with nothing new (round 2 played 5 of 7 so)', () => {
     expect(idle(4, 10)).toEqual([]);
-  });
-
-  it('houses 4–20: only the rest at 15 asks nothing; 8 ask for a real insight', () => {
-    expect(idle(4, 20)).toEqual([15]);
-    expect(ids(4, 20).filter((id) => at(id).real > 0)).toEqual([7, 9, 11, 12, 13, 14, 19, 20]);
-  });
-
-  it('each lesson house shows its new pattern or rule first (§1.3)', () => {
-    for (const [id, lesson] of Object.entries(LESSONS)) {
-      expect([Number(id), at(Number(id)).fresh]).toEqual([
-        Number(id),
-        expect.arrayContaining([lesson]),
-      ]);
-    }
-  });
-
-  it('every insight house stalls before its first ghost, and only a real insight moves it on', () => {
-    for (const id of INSIGHT) expect([id, at(id).opening, at(id).real > 0]).toEqual([id, 0, true]);
-  });
-
-  it('the roles follow the ladder: hard where a real insight opens, teach for the lessons', () => {
-    const roles = ids(4, 24).map((id) => [id, level(id).role, bandFor(id).role]);
-    for (const [id, stored, band] of roles) expect([id, stored]).toEqual([id, band]);
-    expect(ids(4, 24).filter((id) => level(id).role === 'hard')).toEqual(INSIGHT);
-    expect(ids(4, 24).filter((id) => level(id).role === 'teach')).toEqual([4, 5, 6, 8, 10, 17, 18]);
-    expect(ids(4, 24).filter((id) => level(id).role === 'breather')).toEqual([15, 16]);
-    expect(ids(4, 24).filter((id) => level(id).role === 'rest')).toEqual([23, 24]);
-  });
-
-  it('the boards of §1.3: 5 × 5 lessons and rests, 6 × 6 counts, 7 × 7 at 20–22', () => {
-    const sides = ids(4, 24).map((id) => level(id).n);
-    expect(sides).toEqual([5, 5, 5, 6, 6, 6, 5, 6, 6, 6, 6, 5, 5, 6, 6, 6, 7, 7, 7, 6, 6]);
-    expect(ids(4, 24).map((id) => bandFor(id).sides)).toEqual(sides.map((n) => [n]));
   });
 });
 
@@ -162,15 +110,6 @@ describe('round 2 (a): how the houses open', () => {
   it('no two houses in a row open alike (houses 3–24)', () => {
     const same = ids(4, 24).filter((id) => opening(id) === opening(id - 1));
     expect(same).toEqual([]);
-  });
-
-  it('house 12 opens with a cross: one cell sees a whole room from two sides', () => {
-    expect(opening(12)).toBe('cross');
-  });
-
-  it('no free opening in houses 11–24 but house 17 (its lesson, a line single)', () => {
-    const free = ids(11, 24).filter((id) => freebie(model(level(id))));
-    expect(free.filter((id) => id !== 17)).toEqual([]);
   });
 });
 

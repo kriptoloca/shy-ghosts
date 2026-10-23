@@ -31,9 +31,10 @@ import { solve } from '../src/gen/solve';
 /**
  * Gate A (GENERATOR.md §9, A1–A8; A9 is the auditor's): pure tests over every built house. The
  * thresholds are fixed (CLAUDE.md, the fun gate): none of the numbers below may move to make the
- * gate pass; only the windows in src/gen/params.ts and the generator's mechanics may. The one
- * amendment is Hasan's (D82, 2026-10-21): the first shelf, count and lamp at houses 5, 7 and 8
- * (were 9, 12 and 17); every quality threshold is unchanged.
+ * gate pass; only the windows in src/gen/params.ts and the generator's mechanics may. The
+ * amendments are Hasan's: D82 (2026-10-21), the first shelf, count and lamp at houses 5, 7 and 8
+ * (were 9, 12 and 17); D91 (2026-10-22), A6's ceilings for houses 8–24 (tune round 3's depth).
+ * Every other threshold is unchanged.
  */
 const read = (name: string): string =>
   readFileSync(new URL(`../src/data/${name}`, import.meta.url), 'utf8');
@@ -282,12 +283,15 @@ describe('Gate A — A5 the tutorial teaches each rule in order', () => {
 
 describe('Gate A — A6 estimated solve time per band (estSeconds)', () => {
   const ceilings: [string, House[], number][] = [
-    ['4–11', ids(4, 11), 90],
-    ['12–14', ids(12, 14), 130],
-    ['15–16', ids(15, 16), 85],
-    ['17–19', ids(17, 19), 105],
-    ['20–22', ids(20, 22), 160],
-    ['23–24', ids(23, 24), 100],
+    // Gate B tune round 3 (D91, Hasan): the ceilings of houses 8–24 rise to the prototype's
+    // medians + 5 s, rounded up to 5 s; 4–7 keep 4–11's old ceiling
+    ['4–7', ids(4, 7), 90],
+    ['8–11', ids(8, 11), 135],
+    ['12–14', ids(12, 14), 150],
+    ['15–16', ids(15, 16), 135],
+    ['17–19', ids(17, 19), 150],
+    ['20–22', ids(20, 22), 165],
+    ['23–24', ids(23, 24), 135],
     ['cycle positions 1–3', role('cycle-low'), 150],
     ['cycle positions 4–9', role('cycle-high'), 200],
     ['manors', role('manor'), 300],
@@ -297,11 +301,12 @@ describe('Gate A — A6 estimated solve time per band (estSeconds)', () => {
     expect(median(est(hs))).toBeLessThanOrEqual(ceiling);
   });
 
-  it('dailies: median between 120 and 200 s; every house among 1–16 ≤ 130 s', () => {
+  it('dailies: median between 120 and 200 s; every house 1–7 ≤ 130 s and 8–16 ≤ 155 s (D91)', () => {
     const m = median(est(DAILY_LIST));
     expect(m).toBeGreaterThanOrEqual(120);
     expect(m).toBeLessThanOrEqual(200);
-    expect(ids(1, 16).filter((h) => h.grade.estSeconds > 130)).toEqual([]);
+    expect(ids(1, 7).filter((h) => h.grade.estSeconds > 130)).toEqual([]);
+    expect(ids(8, 16).filter((h) => h.grade.estSeconds > 155)).toEqual([]);
   });
 });
 

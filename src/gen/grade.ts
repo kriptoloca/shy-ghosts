@@ -63,6 +63,9 @@ export interface GradeResult {
   grade: Grade | null;
 }
 
+/** A grade the grader finished (`ok`, with its grade): the deepening search keeps no other. */
+export type Graded = GradeResult & { grade: Grade };
+
 export interface GradeOptions {
   /** The highest technique the band allows. */
   maxTech: Tech;

@@ -7,7 +7,7 @@ import {
   DEMO_MAX_MS,
   DEMO_SKIP_FROM_MS,
 } from '../src/config';
-import { parseHouse, shadowsOf, type HouseModel } from '../src/core/house';
+import { lightDemoCell, parseHouse, shadowsOf, type HouseModel } from '../src/core/house';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import { demoFor, type DemoScript } from '../src/game/demo';
 import { inShadow } from '../src/gen/build-levels';
@@ -129,6 +129,26 @@ describe('demoFor (D83)', () => {
     expect(h.solution).not.toContain(copy?.to);
     expect(copy?.at).toBeGreaterThanOrEqual(DEMO_BEAM_MS);
     endsOnTheHold(d);
+  });
+
+  it('house 8 (D103): the copy stands on a lit cell that no resident sees, diagonal to the resident it steps out of, so it is lit and nothing else', () => {
+    const h = model(8);
+    const d = script(8);
+    const [copy] = d.copies;
+    const to = copy?.to ?? -1;
+    expect(d.copies).toHaveLength(1);
+    expect(h.lit[to]).toBe(true);
+    expect(h.solution).not.toContain(to);
+    for (const g of h.givens) expect(h.sees[g]).not.toContain(to);
+    const from = copy?.from ?? -1;
+    expect(h.givens).toContain(from);
+    expect([
+      Math.abs(Math.floor(to / h.n) - Math.floor(from / h.n)),
+      Math.abs((to % h.n) - (from % h.n)),
+    ]).toEqual([1, 1]);
+    expect(copy?.pose).toBe('lit');
+    // the one cell the build checks for (lightDemoCell)
+    expect({ cell: to, from }).toEqual(lightDemoCell(h, h.givens, h.solution));
   });
 
   it('house 10: the light stops at the bookshelf; a see-through copy behind it stays calm, never on a solution cell', () => {

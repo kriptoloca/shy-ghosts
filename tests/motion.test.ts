@@ -4,7 +4,15 @@ import * as config from '../src/config';
 import {
   DOT_POP_MS,
   GLANCE_MS,
+  AFTERIMAGE_ALPHA,
+  AFTERIMAGE_MS,
+  CARD_PULSE_MS,
+  CARD_TIME_MS,
+  GLIDE_LEAN_DEG,
   GLIDE_MS,
+  REASON_BEAT_MS,
+  RESULT_GUARD_MS,
+  RESULT_IN_MS,
   GLOW_IN_MS,
   GLOW_OUT_MS,
   DEMO_HOLD_MS,
@@ -36,7 +44,6 @@ import {
   SHIVER_SWING_MS,
   SLIDE_MS,
   WIN_BEAT_MS,
-  WIN_DIGITS_MS,
   WIN_FLASH_FROM,
   WIN_FLASH_TO,
   WIN_HIT_STOP_MS,
@@ -92,6 +99,8 @@ describe('graybox motion = GDD §3a', () => {
     ['Place → lit', `| ${s(LIT_FLASH_MS)} ms |`],
     ['A calm ghost becomes seen or lit', `| ${s(GLOW_OUT_MS)} ms |`],
     ['Relocate', `| ${s(GLIDE_MS)} ms |`],
+    ['Relocate', `leaning ${s(GLIDE_LEAN_DEG)}° toward its way and straight on arrival`],
+    ['Relocate', `(alpha ${s(AFTERIMAGE_ALPHA)} → 0, ${s(AFTERIMAGE_MS)} ms)`],
     ['Remove', `floats up ${s(REMOVE_RISE)} px`],
     ['Remove', `| ${s(REMOVE_MS)} ms |`],
     ['Mark stroke', `${s(MARK_MS)} ms per cell`],
@@ -105,8 +114,13 @@ describe('graybox motion = GDD §3a', () => {
     ['House solved', `to its frame (${s(WIN_RING_MS)} ms)`],
     ['House solved', `hops and turns to the camera (${s(WIN_HOP_MS)} ms)`],
     ['House solved', `waves twice (${s(WIN_WAVES)} × ${s(WIN_WAVE_MS)} ms)`],
-    ['House solved', `the solve-time digits tick in below the board (${s(WIN_DIGITS_MS)} ms)`],
-    ['House solved', `slides in from 2,050 ms (${s(SLIDE_MS)} ms)`],
+    ['House solved', `the beat ${WIN_BEAT_MS.toLocaleString('en-US')} ms, then the result card`],
+    ['House solved', `the next house slides in after the card (${s(SLIDE_MS)} ms)`],
+    ['Result card', `with a small overshoot (${s(RESULT_IN_MS)} ms)`],
+    ['Result card', `the solve time ticking up from 0:00 (${s(CARD_TIME_MS)} ms)`],
+    ['Result card', `pulsing once every ${CARD_PULSE_MS.toLocaleString('en-US')} ms`],
+    ['Result card', `continues from ${s(RESULT_GUARD_MS)} ms after the card began`],
+    ['Hint', `the reason in beats of ${s(REASON_BEAT_MS)} ms`],
     ['House solved', `a tap skips from ${s(WIN_SKIP_FROM_MS)} ms on`],
     ['Teaching demonstration', `on an ${s(DEMO_HOLD_MS)} ms hold frame`],
     ['Teaching demonstration', `after ${s(DEMO_IDLE_MS / MS_PER_S)} s without input`],
@@ -120,14 +134,14 @@ describe('graybox motion = GDD §3a', () => {
     expect(row(label)).toContain(text);
   });
 
-  it('the finale is about 2.4 s: its parts end before the slide, which starts at 2,050 ms', () => {
+  it('the finale is about 2.4 s: its parts end before the result card, which rises at 2,050 ms', () => {
     expect(WIN_BEAT_MS).toBe(2050);
-    // the sweep (at most WIN_SWEEP_MS), the ring of light, the hop, the waves; the digits tick in
-    // during the hop and the waves
+    // the sweep (at most WIN_SWEEP_MS), the ring of light, the hop, the waves; the solve time ticks
+    // in on the result card that follows (D99)
     const parts =
       WIN_HIT_STOP_MS + WIN_SWEEP_MS + WIN_RING_MS + WIN_HOP_MS + WIN_WAVES * WIN_WAVE_MS;
     expect(parts).toBeLessThanOrEqual(WIN_BEAT_MS);
-    expect(WIN_DIGITS_MS).toBeLessThanOrEqual(WIN_HOP_MS + WIN_WAVES * WIN_WAVE_MS);
+    expect(CARD_TIME_MS).toBeLessThanOrEqual(WIN_HOP_MS + WIN_WAVES * WIN_WAVE_MS);
     expect(Math.abs(WIN_BEAT_MS + SLIDE_MS - 2.4 * MS_PER_S)).toBeLessThanOrEqual(100);
     // the tap that placed the last ghost never skips the payoff
     expect(WIN_SKIP_FROM_MS).toBeGreaterThan(WIN_HIT_STOP_MS + WIN_SWEEP_MS / 2);

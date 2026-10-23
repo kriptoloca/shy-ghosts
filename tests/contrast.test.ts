@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as config from '../src/config';
 import {
+  COLOR_BADGE,
+  COLOR_BADGE_DIGITS,
+  COLOR_CARD,
+  COLOR_CARD_TICK,
+  COLOR_WIN_DIGITS,
+  COLOR_DOT_RIM,
   COLOR_FLOORS,
   COLOR_FLOOR_INKS,
   COLOR_PAGE,
@@ -8,6 +14,7 @@ import {
   COLOR_GLANCE,
   COLOR_HATCH,
   COLOR_HATCH_EDGE,
+  COLOR_HINT_DOT,
   COLOR_LAMP_EDGE,
   COLOR_MARK,
   COLOR_SEEN_LINE,
@@ -26,6 +33,7 @@ import {
   RING_WIDTH,
   SEEN_DOT,
 } from '../src/config';
+import { hatch as hatchBands, type Polygon } from '../src/game/look';
 import {
   chroma,
   contrast,
@@ -157,11 +165,31 @@ describe('the palette floors (D71)', () => {
     expect(ownMargin(lit)).toBeGreaterThanOrEqual(0.5);
   });
 
+  it('F5b (D101): every stripe is bounded by an outline ≥ 3:1 on both sides, on every floor', () => {
+    // in x + y, each stripe [d − w, d + w] has an edge band against each of its two sides
+    const { stripes, edges } = hatchBands();
+    const span = (p: Polygon): [number, number] => {
+      const s = p.map(([x, y]) => x + y);
+      return [Math.min(...s), Math.max(...s)];
+    };
+    const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
+    for (const stripe of stripes) {
+      const [lo, hi] = span(stripe);
+      const sides = edges.map(span);
+      expect([lo, hi].map((v) => sides.some(([a, b]) => near(a, v) || near(b, v)))).toEqual([
+        true,
+        true,
+      ]);
+    }
+    expect(lowest(edge)).toBeGreaterThanOrEqual(3);
+  });
+
   it('F6: every line, dot and outline drawn on the floors ≥ 3:1 against every floor state, in every view', () => {
     const inks: [string, number][] = [
       ['sight line', COLOR_SEEN_LINE],
       ['glance', COLOR_GLANCE],
       ['mark', COLOR_MARK],
+      ['hint dot', COLOR_HINT_DOT],
       ['settled ring', COLOR_SETTLED_RING],
       ['bookshelf outline', COLOR_FURNITURE_EDGE],
       ['lamp outline', COLOR_LAMP_EDGE],
@@ -197,6 +225,34 @@ describe('the progress dots on the dark page (D75; the design critique, WCAG 1.4
   it("a full dot's dark ring ≥ 3:1 against its swatch; full and empty ≥ 2.5:1 apart", () => {
     expect(min(ALL.map((f) => contrast(ring, f)))).toBeGreaterThanOrEqual(3);
     expect(min(ALL.map((f) => contrast(f, empty(f))))).toBeGreaterThanOrEqual(2.5);
+  });
+});
+
+describe("the hint's digit badges (Gate B tune round 3 §2, D98)", () => {
+  const disc = rgb(COLOR_BADGE);
+  const digits = rgb(parseInt(COLOR_BADGE_DIGITS.slice(1), 16));
+  const page = rgb(COLOR_PAGE);
+
+  it('the digit ≥ 4.5:1 on its disc, the disc ≥ 3:1 on every floor, its rim ≥ 3:1 on the page, in every view', () => {
+    for (const [, view] of VIEWS) {
+      expect(contrast(view(digits), view(disc))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(view(rgb(COLOR_DOT_RIM)), view(page))).toBeGreaterThanOrEqual(3);
+    }
+    expect(lowest(disc)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('the held result card on the dark page (Gate B tune round 3 §3, D99)', () => {
+  const card = rgb(COLOR_CARD);
+  const page = rgb(COLOR_PAGE);
+
+  it('its digits, bulb and arrow ≥ 4.5:1 on the panel, the tick ≥ 3:1, the rim ≥ 3:1 on the page, in every view', () => {
+    const digits = rgb(parseInt(COLOR_WIN_DIGITS.slice(1), 16));
+    for (const [, view] of VIEWS) {
+      expect(contrast(view(digits), view(card))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(view(rgb(COLOR_CARD_TICK)), view(card))).toBeGreaterThanOrEqual(3);
+      expect(contrast(view(rgb(COLOR_DOT_RIM)), view(page))).toBeGreaterThanOrEqual(3);
+    }
   });
 });
 
@@ -238,6 +294,7 @@ describe('local contrast: every ink touches only its own floor (DÜŞÜK 7, D85)
     const inks: [string, number][] = [
       ['settled ring', COLOR_SETTLED_RING],
       ['mark', COLOR_MARK],
+      ['hint dot', COLOR_HINT_DOT],
       ['sight line', COLOR_SEEN_LINE],
       ['glance', COLOR_GLANCE],
       ["hatch's edge", COLOR_HATCH_EDGE],

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COLOR_BADGE,
   COLOR_HATCH,
+  COLOR_HINT_DOT,
   COLOR_MARK,
   COLOR_SETTLED_RING,
   COLOR_SOLVED_FRAME,
@@ -10,6 +12,7 @@ import { parseHouse, type HouseModel } from '../src/core/house';
 import { PlayState, type PlayEvent } from '../src/core/state';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import type { MoveKind } from '../src/game/session';
+import type { ReasonPicture } from '../src/game/reason';
 import { BoardView } from '../src/game/view';
 import { roomLetter, visibleText } from '../src/game/visible';
 import { Rng } from '../src/gen/rng';
@@ -189,6 +192,56 @@ describe('visibleText', () => {
       expect(w, word).toBeDefined();
       for (const c of w?.colours ?? []) expect([word, w?.fits(c)]).toEqual([word, true]);
     }
+  });
+
+  it("the bulb's picture (D98): bands, digits, small blue dots, the pulsing area, in words of what is drawn", () => {
+    const { v } = house1();
+    const picture: ReasonPicture = {
+      beats: 2,
+      shown: 2,
+      bands: [0, 2],
+      badges: [
+        { digit: 2, segment: 0, room: null },
+        { digit: 2, segment: 2, room: null },
+        { digit: 1, segment: null, room: 1 },
+      ],
+      wash: [0, 2],
+      dots: [1],
+      copies: [3],
+      pulse: 1,
+      lines: [[0, 3]],
+    };
+    const text = visibleText(1, v, picture);
+    expect(text).toContain('pale bands: row 0; column 0');
+    expect(text).toContain(
+      'dark discs with digits: the digit 2 left of row 0; the digit 2 above column 0; the digit 1 at the top left corner of area B',
+    );
+    expect(text).toContain('pale cells: (0,0) (1,0)');
+    expect(text).toContain('small blue dots: (0,1)');
+    expect(text).toContain('faint figures with open eyes: (1,1)');
+    expect(text).toContain('pulsing area: B');
+    expect(text).toContain('dotted lines to empty cells: (0,0) to (1,1)');
+    expect(text.match(RULE_WORDS)?.[0] ?? null).toBeNull();
+    // no picture, no such lines
+    expect(visibleText(1, v)).not.toContain('pale bands');
+    // the colour words name the colours drawn: blue dots (CIELCh hue of sRGB blue: 306), dark discs
+    expect(hueAngle(rgb(COLOR_HINT_DOT))).toBeGreaterThan(230);
+    expect(hueAngle(rgb(COLOR_HINT_DOT))).toBeLessThan(310);
+    expect(lightness(rgb(COLOR_HINT_DOT))).toBeLessThan(30);
+    expect(lightness(rgb(COLOR_BADGE))).toBeLessThan(30);
+  });
+
+  it('the held result card (D99): its digits and icons, below or beside the board', () => {
+    const { v } = house1();
+    const card = { house: 12, time: '2:31', noHint: true, beside: false };
+    expect(visibleText(12, v, null, card)).toContain(
+      'a card below the board: the digits 12 and 2:31, a bulb with a tick, an arrow pointing right',
+    );
+    expect(visibleText(12, v, null, { ...card, noHint: false, beside: true })).toContain(
+      'a card beside the board: the digits 12 and 2:31, an arrow pointing right',
+    );
+    expect(visibleText(12, v)).not.toContain('a card');
+    expect(visibleText(12, v, null, card).match(RULE_WORDS)?.[0] ?? null).toBeNull();
   });
 
   it('bookshelf shapes, a round icon with rays, its yellow stripes, a squinting figure and dots', () => {

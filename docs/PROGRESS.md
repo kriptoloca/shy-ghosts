@@ -4,16 +4,17 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-**Gate B tune round 3, the last, approved by Hasan (D91, 2026-10-22), is being planned.** Gate B
-round 3 did not pass (docs/gate-b-round3.md): B1–B4 and B6 pass, B5 fails (interest median 3 of
-5 over houses 4–20, bar 3.5; interest fell after house 10) and B7 fails (verdict NO, Flow 2, Fair
-4): every house from 4 was one chain of forced moves. Hasan chose depth: deeper houses from house
-8, Gate A's A6 ceilings for houses 8–24 free to rise as far as needed (every other threshold and
-B1–B7 unchanged), the hint's message, the end of a house, the colours and the landscape layout
-fixed, then a new blind playtest; a fail ends Shy Ghosts for good. · Epics 0–3 and tune rounds
-1–2 done and pushed (`kriptoloca/shy-ghosts`, `main` at `4d4ba4e feat(gate-b): tune round 2`);
-**Gate A passed** (A1–A9; amended with Hasan's approval, D82) · Last update: 2026-10-22 ·
-Branch: `main`
+**Gate B tune round 3, the last (D91), is built, audited and pushed (2026-10-23): the code audit's 1 KRİTİK, 1 ORTA and 5 DÜŞÜK and the A9 re-run's 2 DÜŞÜK are fixed red first; Gate A A1–A9 passed on the auditor's checker; Gate B round 4 next, a fail ends the game.** Gate B round 3 did not pass
+(docs/gate-b-round3.md): B5 failed (interest median 3 of 5 over houses 4–20, bar 3.5) and B7
+(verdict NO): every house from 4 was one chain of forced moves. Hasan chose depth (D91): deeper
+houses from house 8, Gate A's A6 ceilings for houses 8–24 raised to the plan's values (every other
+threshold and B1–B7 unchanged), the hint's message, the end of a house, the colours and the
+landscape layout fixed, then a new blind playtest (round 4); a fail ends Shy Ghosts for good.
+The round follows the plan appended to docs/gate-b-round3.md (D92–D103): houses 8–24 equal its
+prototype's byte for byte, houses 1–7, 25–1000 and the dailies equal round 3's. · Epics 0–3 and
+tune rounds 1–3 done and pushed (`kriptoloca/shy-ghosts`, `main` at `feat(gate-b): tune round
+3`); **Gate A passed** (A1–A9; amended with Hasan's approval, D82 and D91) · Last update:
+2026-10-23 · Branch: `main`
 Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
 core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
 docs/questions.md D1).
@@ -446,6 +447,89 @@ AC → test (docs/gate-b-round2.md §8, and the round-1 code audit):
 | The rule hooks throw under `?playtest=1` (DÜŞÜK 9) | round2-audit.spec | green |
 | One shadow walk for house 10's lesson and demonstration; the levels unchanged (DÜŞÜK 10) | house.test (2), demo.test; `levels:check` | green |
 
+## Session plan (Gate B tune round 3, the last) — built 2026-10-23, uncommitted
+Baseline: `4d4ba4e feat(gate-b): tune round 2` and round 3's report. The plan is the project
+manager's, appended whole to docs/gate-b-round3.md ("Tune round 3 (D91–D103): the plan") with the
+port's departures after it; its prototype (scratch) is the reference, and its decisions are
+D92–D103. Gate A's thresholds are unchanged but A6's ceilings for houses 8–24, raised by Hasan's
+D91 to the plan's §1.7 values (D97). Each task's tests were written first and seen failing, then
+green with `npm test` and `npm run check` before the next task.
+
+1. [x] The depth profile (`src/gen/depth.ts`) [`tests/depth.test.ts`: tags on fixtures; the
+   calibration on round 3's list, `tests/fixtures/round3-houses.json`: no house stalls twice,
+   every tail ≥ 4].
+2. [x] The deepening search (`src/gen/deepen.ts`) [`tests/deepen.test.ts` (16): determinism, the
+   solution kept and unique, rooms connected and within size, residents and lamps fixed,
+   canonical grading, a small target met, an idle shelf dropped, the early stop; seven mutations
+   of the module, each caught].
+3. [x] The rungs 8–24, the opener and pattern history, `LADDER_STARTS`, house 8's demonstration
+   cell, `npm run levels:starts`; rebuild in 198.9 s [`tests/round3.test.ts` (16), which
+   replaces the seven round-2 ladder tests that fail on the new list as the plan says;
+   `tests/house.test.ts` (`lightDemoCell`); `tests/scripts.test.ts` (`levels:starts`)].
+4. [x] Gate A: A6 split at house 8 and raised for 8–24 only [`tests/gate-a.test.ts`: red on the
+   new list (4–11 median 102 > 90), then 43 of 43].
+5. [x] The hint: the reason in beats with digits, the recharge refunded when a move cancels the
+   reason and kept by the save (v2) [`tests/hint.test.ts`, `session.test.ts`, `storage.test.ts`,
+   `layout.test.ts` (badges), `contrast.test.ts` (hint dots), `view.test.ts`;
+   `tests/e2e/round3.spec.ts` (4)].
+6. [x] The held result card (`src/game/card.ts`, the scene's `card` phase) [`layout.test.ts` ›
+   `cardBox`; round3.spec (4); timing.spec › the finale].
+7. [x] The relocation glide: 320 ms, a lean of 8°, an afterimage [`motion.test.ts` (the GDD row);
+   timing.spec › "a relocation glides …": red on the old glide (afterimage 0 ms), green 10 frames
+   between and 298 ms].
+8. [x] Swatch rule S1, lit stripes outlined on both sides [`look.test.ts` (S1 on every house;
+   house 34 failed it); `contrast.test.ts` (F5 kept, F5b new)].
+9. [x] The centred landscape [`layout.test.ts` over every landscape design size].
+10. [x] House 8's demonstration on a lit cell no resident sees [`demo.test.ts`].
+11. [x] Docs: GDD §2, §3.1–§3.3, §3a, §11, §12; GENERATOR §4.8, §6, §6.2, §7, §8, §9, §10.3;
+    TASKS (the A6 line, the round-3 checklist); docs/questions.md D92–D103;
+    docs/gate-b-round3.md; this file.
+12. [x] Gates: `npm run check`, `npm test` (549), `npm run levels:check` (195.9 s,
+    byte-identical), `npm run build`, `npm run e2e` (75, none retried), `npm run size`
+    (1.73 MB) green; the design critique of the swatch rule and the card ("Measured" below).
+13. [x] The code audit (1 KRİTİK, 1 ORTA, 5 DÜŞÜK) and the A9 re-run (passed; 2 DÜŞÜK), each
+    finding fixed with a test seen failing first ("Reviews and audits" below). Gates again:
+    `npm run check`, `npm test` (554), `npm run levels:check` (199.2 s, byte-identical),
+    `npm run build`, `npm run e2e` (77, none retried; the timing project green three runs in a
+    row), `npm run size` (1.73 MB). Open for the main session: the commit; then round 4.
+
+E2e tests changed by the held card and the rebuild (no assertion dropped, none loosened, no
+retries):
+- graybox.spec: "load → house 1 interactive …", the three aspect runs, "a house restored already
+  solved …" (now also asserts the card of house 2) and "a new screen size during the win beat …"
+  tap the card to go on; "a press held on the hint from the win beat …" and "a tap in the beat
+  skips it …" now also press through the card; the playtest test reads house 17 as 7 × 7 (D95).
+- round1.spec: "a tap 300 ms into the finale …" taps the card after the beat.
+- round2.spec: "a tap left over from the finale …" taps the card first; "a new screen size keeps
+  the hint's reason, and the solve time on the held card" (the time now sits on the card, and the
+  card's house is asserted); "a new screen size during the slide …" waits for the slide after
+  the card; "a settled room keeps its floor" picks an unlit cell (round 3's first empty cell is
+  lit now).
+- timing.spec: the finale test measures the beat (±50 ms as before), the card up within 2.7 s of
+  the last placement, and the slide within 200 ms of its length after the tap (the whole 2.4 s
+  finale no longer runs on by itself); "a tap 700 ms …" and the demonstration-after-solve tests
+  tap the card; the glide test is new.
+
+AC → test (the plan's §9):
+
+| AC | Test | Status |
+| --- | --- | --- |
+| Depth tags on fixtures; round 3's houses 4–24 never stall twice, every tail ≥ 4 | depth.test | green |
+| The search: deterministic, one solution, rooms connected and sized, residents and lamps fixed, canonical grade, a small target met, an idle shelf dropped, the early stop | deepen.test | green |
+| Houses 9–24 stall ≥ 2 (13, 14, 17–22 ≥ 3); a real step after ≥ 2 ghosts; tail ≤ 3; autopilot runs ≤ 3; two kinds in hard houses; house 8 stalls once, after its first ghost | round3.test › depth | green |
+| Boards 6 × 6 at 7–8 and 7 × 7 from 9; lessons 5, 7, 8, 10, 16, 17, 18 pass their tests | round3.test › depth, the lessons | green |
+| Each opener unlike the two before; the two-room count opens one house; no pattern repeats the house before | round3.test › openers and patterns | green |
+| Houses 8–24 the prototype's byte for byte; 1–7, 25–1000 and the dailies round 3's | round3.test › the files (`round3-ladder.json`, `round3-digests.json`); the byte check against the prototype's files | green |
+| `levels:starts` reproduces the starts of 8–10 (157, 256, 256); build ≤ 600 s | round3.test, scripts.test; `levels:check` 195.9 s | green |
+| Gate A 43 of 43 with A6 as D97 | gate-a.test | green |
+| The reason script on a count, a cross and a claim (digits, dots, the final 1); the refund; a v1 save migrates | hint.test, session.test, storage.test | green |
+| The first press: the count's digit 2 and dots on exactly the cells the grader removes; a tap elsewhere clears it and the bulb is ready; the second press starts the cooldown; a reload with 50 s left restores 50 ± 1 s | round3.spec (4) | green |
+| The card up within 2.7 s and held 10 s; a tap at 300 ms does nothing, at 700 ms continues; the waking tap does nothing; `visible()` lists its digits; it never meets the board, a swatch or a button | round3.spec (4), timing.spec, layout.test | green |
+| The glide: ≥ 3 frames between, an afterimage ≥ 200 ms | timing.spec | green |
+| S1 on every house; F5 kept; F5b | look.test, contrast.test | green |
+| Landscape: the board's centre at the screen's ± 1, no overlap, cells ≥ 80 at 8 × 8 (aspect 1.2–2.22) | layout.test | green |
+| House 8's copy on a lit cell no resident sees | demo.test, house.test, round3.test | green |
+
 ## Epic board
 | Epic / gate | Scope | Status | Evidence |
 | --- | --- | --- | --- |
@@ -454,7 +538,7 @@ AC → test (docs/gate-b-round2.md §8, and the round-1 code audit):
 | 2 | Content pipeline (M0): solver, grader, players, generator, 1,000 houses + 792 dailies | done, audited, pushed (`4cd221d`); tune round 2 of 2 used (D55–D58) | 233 unit tests (24 files); `npm run levels` 120.0 s; `levels:check` byte-identical |
 | **Gate A** | GENERATOR.md §9, A1–A9 | **passed** (2026-10-21): the auditor's own segment code, solver and players agree on all 1,792 houses | `tests/gate-a.test.ts` (42); "Measured (Epic 2)" below |
 | 3 | Layout and graybox loop (M1) | done, audited, every finding fixed red-first, pushed (`4e40bd2`) | 293 unit tests (32 files), 26 e2e; "Measured (Epic 3)" below |
-| **Gate B** | TASKS.md Epic 3, B1–B7 (the playtester's verdict) | rounds 1 and 2: **not passed** (round 2: B5); tune round 1 committed (`bfd2b96`); tune round 2 of 2, the last, built and its audit fixed, uncommitted (D80–D90); round 3 next, a fail stops the work | 477 unit tests (37 files), 66 e2e; "Measured (Gate B tune round 2)" below |
+| **Gate B** | TASKS.md Epic 3, B1–B7 (the playtester's verdict) | rounds 1–3: **not passed** (round 3: B5, B7); tune rounds 1 and 2 committed (`bfd2b96`, `4d4ba4e`); tune round 3, the last (D91), built, uncommitted (D92–D103); round 4 next, a fail ends Shy Ghosts | 554 unit tests (40 files), 77 e2e; "Measured (Gate B tune round 3)" below |
 | 4 | Feel, face and sound (M2, part 1) — only after both gates | blocked by the gates | |
 | 5 | Meta, daily, hint and ads (M2, part 2) | blocked by the gates | |
 | 6 | Pause sheet, brand, store, release (M3) | blocked by the gates | |
@@ -714,6 +798,68 @@ download with Epic 3 and `dailies.json` (168 KB) loads on first use (D57).
   teal beside a dark wall, so the content face and the swatch's tick carry most of "settled" at
   a glance; the demonstration's light is still a flat warm fill that tints the floors it covers.
 
+### Gate B tune round 3 (2026-10-23, same container)
+- `npm run check` clean; `npm test` 554 tests in 40 files (≈ 30 s); `npm run e2e` 77 green,
+  none retried, a flaky test failing the run (smoke 4, graybox 22, round1 13, round2 9,
+  round2-audit 8, round3 9; then the timing project's 12 alone, without the GPU flags; ≈ 6.4
+  minutes); `npm run build` green; `npm run size`: first download **1.73 MB** (target 5 MB).
+  After the code audit the timing project passed 12 of 12 three runs in a row (the card up
+  2,321–2,341 ms after the last placement, against 2,490).
+- `npm run levels` **198.9 s**; `npm run levels:check` reproduces all four files in **195.9–199.2 s**
+  (A8's budget 600 s). The four files equal the prototype's final data byte for byte (sha-256,
+  first 16 hex: levels 066651b70b058afa, levels-meta a90cde428aed3ac6, dailies 54fe5d1391ab03ad,
+  dailies-meta 48a4362d29a03007); houses 1–7, 25–1000 and the dailies equal round 3's files
+  (`4d4ba4e`); the per-house table equals the prototype's.
+- Gate A on the new files against the committed ones (`4d4ba4e`); `tests/gate-a.test.ts` 43 of
+  43 (A6's 4–11 split into 4–7 and 8–11), every threshold unchanged but A6 for 8–24 (D91, D97):
+
+| # | New | Committed | Threshold |
+| --- | --- | --- | --- |
+| A1, A2 | 1,792 of 1,792 unique and graded; T4 outside manors 0, two T4 in a manor 0 | same | all; 0; 0 |
+| A3 | dailies T3 48.4 %; T4 in manors 100, 287, 452, 507; first T3 at 7 | same | ≥ 40 %; no T3 before 7 |
+| A5 | first shelf 5, first lamp 8, first T3 7, first T4 100 | same | 5, 8, 7; T4 from 34 |
+| A4 medians | 4–8 **11** < 12–14 **26** > 15–16 **19.5**; 17–19 **26** < 20–22 **33** > 23–24 **19.5** | 8 < 22 > 11; 15 < 28 > 10.5 | strict order |
+| A4 curve | MA(13) 16.8, MA(50) 25.4, ratio **1.51**; worst fall 3.1 | 14.0, 25.4, 1.81; 2.4 | ≥ 1.4; ≤ 6 |
+| A6 | 4–7 **70**; 8–11 **128**; 12–14 **144**; 15–16 **125.75**; 17–19 **141**; 20–22 **160**; 23–24 **128.5**; positions 1–3 140.5; 4–9 176.5; manors 241.5; dailies 160.75; longest of 1–7 117, of 8–16 146.5 | 4–11 76; 115; 72.5; 99; 152; 87; same; same; same; same | ≤ 90; 135; 150; 135; 150; 165; 135 (D97); 150; 200; 300; 120–200; ≤ 130; ≤ 155 |
+| A7 | capped max 0.344, manors 0.182; mean naive 0.120, < 0.5 on 100 %; shallow (1,142 T3 houses) max 0.5, mean 0.257 | 0.344, 0.182; 0.121, 99.9 %; 1,138: 0.5, 0.257 | ≤ 0.35, 0.25; ≤ 0.25, ≥ 90 %; ≤ 0.6, ≤ 0.4 |
+| A8 | `levels:check` identical (195.9 s) | same (188.3 s) | ≤ 600 s |
+
+- Every A6 median of houses 8–24 lies at or under the plan's §1.7 ceilings (the prototype's
+  median + 5 s, rounded up to 5 s); none was raised.
+- The ladder (houses 8–24, the depth profile; the plan's §1.6): stalls 1 at house 8 (after its
+  first ghost), 2 at 9–11, 15, 16, 23, 24 and 3 at 12–14 and 17–22; tails 1–3; the longest
+  autopilot run 2–3; d 11–34; est 87–160 s; naive 0.02–0.38. Round 3's houses 4–24 stalled at
+  most once, with tails 4–9 (D92).
+- Timing, headless Chromium, the timing project without the GPU flags (two full runs): the beat
+  2,052.8–2,053.9 ms (± 50 of 2,050), the card up 2,329.5–2,341 ms after the last placement
+  (≤ 2,700), the slide 352.1–355.6 ms after the tap (± 200 of 320); the glide 10 frames between
+  its cells in a 30 ms sampling, the afterimage 269–298 ms (≥ 3 and ≥ 200; red on the old glide:
+  6 frames, 0 ms).
+- Swatches and light (D101): S1 holds on all 1,795 boards (the tutorial, houses 1–1000, the
+  dailies; round 3's house 34 broke it with clay and sand, both vertical stripes, 12.8). The lit stripes cover 0.075 of a lit cell and their outlines 0.04 in all (0.02 a
+  side, after the code audit's ORTA 1): F3's ring 3.01, F5's margin 0.70 (≥ 0.5), F5b holds; the
+  plan's stripes of 0.10 give F5 −1.83, outlines of 0.03 a side F3 2.90–2.94. At device resolution
+  on a 360 × 640 phone at 2× each outline is 1.7 px: its strongest pixel 6.1–8.0:1 on mint and
+  rose, 2.7–4.3 on house 8's darker floors (0.015 a side: 2.2–7.4).
+- Screenshots for the critique at 360 × 640, 540 × 960, 600 × 600 and 844 × 390 @2x (scratch,
+  outside the repository): houses 17, 18, 20 and 34 at rest, the hint's reason in house 7, the
+  card of house 12 in each arrangement.
+- The design critique of the swatch rule and the card (`design:design-critique`, the nursery
+  check): **pass**, nothing blocking round 4. Not a nursery palette and not a coloured grid:
+  S1 keeps rooms whose wallpapers share a family apart at swatch size while the hues stay dusty
+  (chroma ≤ 20), and the wallpaper, walls and shelves still read as an old house; the lit stripes read as light laid
+  over a room (amber, outlined), not as a room of its own. The card is a flat slate bar with
+  cream digits, the bulb with a teal tick and a plain arrow: no stars, confetti or bounce
+  beyond its small overshoot, so it reads as a quiet summary, and the arrow on the right is the
+  clear way on. For Epic 4: (1) at 1:1 the card's 2 × 2 grid puts the arrow under the time,
+  small beside the full-size undo and hint buttons, which stay lit while the card holds; dim
+  them during the card or give the arrow the larger slot; (2) where a room's own wallpaper runs
+  on the same diagonal as the lit stripes (house 20's rose room), hue and outline alone carry
+  "lit": run the stripes on the other diagonal there, or re-measure F5 for a crossed pattern;
+  (3) the pale lilac of house 20 and the palest rose are the sweetest tones left (round 2's
+  note): a step down in Epic 4; (4) the hint's room badge "1" stands on the room's wall where
+  rooms meet and can read as the wall's; Epic 4 may set it inside the room.
+
 ## Reviews and audits
 ### Epics 0–1, independent audit (2026-10-21)
 Verdict: pass, 0 KRİTİK, 0 YÜKSEK. The auditor's own oracle (written from GDD §3 and D21–D46,
@@ -831,6 +977,25 @@ match in the timing project only. One new DÜŞÜK: `inputHeld()` ran every fram
 allocated (`Object.values` in `hud.ts`, two closures); the main session fixed it (a fixed list of
 the buttons, plain loops).
 
+### Gate B tune round 3, the code audit and the A9 re-run (2026-10-23)
+Verdict: Gate A A1–A9 passed on the auditor's own checker, its numbers identical to the build's.
+The code audit: 1 KRİTİK, 1 ORTA, 5 DÜŞÜK; the A9 re-run: 2 DÜŞÜK. Every finding fixed in the
+uncommitted tree, each with its test seen failing first (the e2e against the build before the
+fix, or a scratch mutant); no threshold, floor or test tolerance moved:
+
+| # | Finding | Fix | Test (red → green) |
+| --- | --- | --- | --- |
+| KRİTİK 1 | The card's wall-clock bound, `cardUpMs ≤ 2,700`, allowed +410 ms over 2,050 + 240 where round 1's whole-finale check allowed ±200 | `CARD_UP_MAX_MS = WIN_BEAT_MS + RESULT_IN_MS + FINALE_SLACK_MS` (2,490); the lower bound kept | timing.spec › the finale: a scratch mutant with the card's rise 300 ms late (up at 2,631–2,648 ms) passed the old bound and fails the new; the real build 2,321–2,341 ms; the timing project green three runs in a row (12 of 12 each) |
+| ORTA 1 | Each stripe outline 0.015 of the cell in x + y: one device pixel at 3.0–6.5:1 on the round-4 phone, where 431eb44 drew two at 7.9–8.6:1 on its one side; worse on teal | The widest the floors allow: outlines 0.04 in all (0.02 a side) with stripes 0.075 (F3's ring 3.01, F5's margin 0.70; 0.03 a side needs 0.06 in all and gives F3 2.90–2.94 at any stripe share; stripes 0.08 with 0.04 gives F5 0.47); D101 | round1.spec › the lit stripes at 2×: house 8's lit cells scanned at device resolution, both outlines of every stripe ≥ 1 px at ≥ 2.5:1 (0.015 a side: 2.2–2.4 on cells 3 and 19 → 2.7–4.3 on the darker floors, 6.1–8.0 on mint and rose). The audit's two pixels at ≥ 4.5:1 is out of reach: the floors pin the width at 1.7 px and solid brown is 3.6:1 on the clay floors |
+| DÜŞÜK 1 | The recharge was not saved while the card held | A flush writes in every phase: the house in progress in play, the progress alone elsewhere (`recordHintRecharge`) | round3.spec › a pause while the card holds: 4.26 s off → within 1 s |
+| DÜŞÜK 2 | A late merged save's `hintReadyIn` never reached the running clock | `onLateSaveMerged` (progress.ts); `HintClock.adopt` takes a longer recharge | progress.test, session.test: no hook → 60 taken, 10 ignored |
+| DÜŞÜK 3 | GDD §3.1 and §3a said the hint's cell "stays hidden" | The cell bears no mark, the room's other cells do (D98) | — |
+| DÜŞÜK 4 | No opener test on the files | round3.test: every house 8–24 in its rung's classes, none free, 17 by the budget | red on round 3's files (house 15 opened with the budget) → green |
+| DÜŞÜK 5 | An empty opener filter searched CANDIDATE_LIMIT walks before failing | `openersLeft`, decided once before the loop, throws at once | build-levels.test: house 16's rung with both classes used: ran on → throws within 1 s |
+| DÜŞÜK 6 (A9) | `chosen === start` pinned for houses 8–10 only; D96 said a stale start only costs time | round3.test pins every house 8–24 to its start; D96 reworded | a table one short at house 12 chooses 3,328, not 3,327 → red; the table green |
+| DÜŞÜK 7 (A9) | GENERATOR §4.8's tail counted one more than `depth.ts` | "ghosts placed after the one the last real step placed" (§4.8, `DepthSpec`) | — |
+| DÜŞÜK 8 | `inputHeld()` listed as still allocating | The tree already has the fixed form: `hud.pressing` walks the fixed `list`, the scene walks `input.manager.pointers`; nothing reintroduced an allocation (checked) | — |
+
 ## Hasan's steps (outside the code)
 - [x] Create the GitHub repository `kriptoloca/shy-ghosts` and give the Claude GitHub App access
       (done 2026-10-21; `main` pushed through `fa66f51`; CI and the Pages workflow ran green on
@@ -839,18 +1004,19 @@ the buttons, plain loops).
       Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
 - [x] 2026-10-21: approved the Gate A amendment (the first shelf, count and lamp at houses 5, 7
       and 8; D82) and the CLAUDE.md update of rule 5 and the input rule (D69, D72).
+- [x] 2026-10-22: chose depth for tune round 3, the last (D91): A6's ceilings for houses 8–24
+      free to rise (set by D97), a new blind playtest after it, a fail ends Shy Ghosts.
 
 ## Next steps (in order)
-1. **Gate B tune round 3, the last** (D91): the project manager's plan (deeper houses from 8 with
-   evidence, the exact A6 ceilings, the playtester's UX list), then the coder, the A9 re-run and
-   the code audit, the main session's gate and commit.
-2. **Gate B round 4**: a new blind playtester, the same persona, protocol and bars as round 3. A
+1. **Gate B round 4**: a new blind playtester, the same persona, protocol and bars as round 3. A
    fail ends Shy Ghosts for good.
-3. Only if Gate B passes: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at
+2. Only if Gate B passes: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at
    9:16, one line each), then the `/test/` link (GitHub Pages is still off: the Pages workflow's
    `configure-pages` cannot switch it on with the workflow's token, so every run so far skipped
    the deploy; Hasan's step above); Epic 4 (feel, face and sound) starts. Its feel constants
    move from `src/config.ts` ("Graybox motion") to `src/game/feel.ts`; it decides whether the two
    graybox aids of D59 (the lasting sight line, the glance dots) stay, and takes the palest rose
-   and sky down a step (the design critique above).
-4. Open: arrow keys and Enter on desktop (GDD §3.1, optional, D60).
+   and sky down a step (the design critique above); round 3's critique adds the card at 1:1 (the
+   arrow's slot, the buttons dimmed while it holds), the lit stripes over a wallpaper on the same
+   diagonal, and the room badge "1" on a wall.
+3. Open: arrow keys and Enter on desktop (GDD §3.1, optional, D60).

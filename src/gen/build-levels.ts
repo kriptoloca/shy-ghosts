@@ -1,8 +1,17 @@
-import { geometry, parseHouse, rotate, shadowsOf, type HouseData } from '../core/house';
+import {
+  geometry,
+  lightDemoCell,
+  parseHouse,
+  rotate,
+  shadowsOf,
+  type HouseData,
+} from '../core/house';
 import { TUTORIAL_HOUSES } from '../data/tutorial';
 import { QUARTER_TURNS } from '../config';
 import { AP_FULL, apOpening, freebie, openingOf } from './autopilot';
 import { dateRange } from './dates';
+import { deepen, kindOf, openerClass, patternOf } from './deepen';
+import { depthProfile } from './depth';
 import { makeCandidate, type Candidate } from './generate';
 import {
   TRIVIAL,
@@ -12,9 +21,17 @@ import {
   type Grade,
   type GradeOptions,
   type GradeResult,
+  type Graded,
 } from './grade';
 import {
   CANDIDATE_LIMIT,
+  DEEPEN_ABORT_AT,
+  DEEPEN_EVALS,
+  DEEPEN_SHELF_SHARE,
+  DEEPEN_T0,
+  DEEPEN_T1,
+  LADDER_STARTS,
+  OPENER_MEMORY,
   SPLIT_TWICE_SEGMENTS,
   CYCLE_MANOR,
   CYCLE_PERIOD,
@@ -61,7 +78,9 @@ export type Miss =
   | 'insight'
   | 'opening'
   | 'idle'
-  | 'naive';
+  | 'naive'
+  | 'start'
+  | 'depth';
 
 /** How a house was found: the candidates tried and what the others missed. */
 export interface Search {
@@ -69,8 +88,10 @@ export interface Search {
   role: House['role'];
   tried: number;
   misses: Partial<Record<Miss, number>>;
-  /** Candidates that met every window: 1, or up to `lowestOf` for houses 4, 5 and 8. */
+  /** Candidates that met every window: 1, or up to `lowestOf` for houses 4 and 5. */
   kept: number;
+  /** The candidate index k of the house chosen (`npm run levels:starts` reads the ladder's). */
+  chosen: number;
 }
 
 /** The generator's own rejections (steps 2–5), and the misses of a candidate outside the d window. */
@@ -91,6 +112,13 @@ export interface BuildOptions {
   dailies?: number;
   /** Progress lines. */
   log?: (line: string) => void;
+  /**
+   * Where the search of each ladder house starts (D96; default LADDER_STARTS). `{}` searches every
+   * one from k = 0, as `npm run levels:starts` does.
+   */
+  starts?: Readonly<Record<number, number>>;
+  /** Called after each house of the list, with how it was found. */
+  onHouse?: (h: House, s: Search) => void;
 }
 
 function sorted(cells: readonly number[]): number[] {
@@ -309,6 +337,41 @@ function opensAs(p: Puzzle, band: Band, prevOpening: string | null): boolean {
   return !(band.newOpening && opening === prevOpening);
 }
 
+/**
+ * The openers of the ladder's houses so far (D95): the recent opener classes, whether a two-room
+ * count has opened a house, and the pattern of the house before (`patternOf`).
+ */
+export interface Openers {
+  recent: string[];
+  count2: boolean;
+  pattern: string | null;
+}
+
+/**
+ * The opener classes a ladder rung may still use after the houses before it (D95): a lesson that
+ * fixes its opener (17: the budget) keeps it; the others avoid the two openers before and a second
+ * two-room count. None left is a fault in the ladder, reported at once rather than after
+ * CANDIDATE_LIMIT walks that can never fit (round 3's code audit, DÜŞÜK 5). Nothing on the ladder
+ * (no depth) has none.
+ */
+function openersLeft(label: string, band: Band, openers: Openers | null): readonly string[] {
+  const spec = band.depth;
+  if (!spec) return [];
+  const left =
+    spec.openers.length === 1
+      ? spec.openers
+      : spec.openers.filter(
+          (o) => !(openers?.recent.includes(o) ?? false) && !(o === 'count-2' && openers?.count2),
+        );
+  if (left.length === 0) {
+    throw new Error(
+      `${label}: no opener class left: the rung allows ${spec.openers.join(', ')}, the houses ` +
+        `before used ${(openers?.recent ?? []).join(', ')}`,
+    );
+  }
+  return left;
+}
+
 /** A candidate that met every window, waiting in the pool. */
 interface Qualified {
   k: number;
@@ -318,15 +381,27 @@ interface Qualified {
 }
 
 /**
+ * House 8's demonstration has its cell (D103): a lit cell no resident sees. Checked after the
+ * deepening search, which walks with the lesson test alone (`teaches`), as the plan's prototype
+ * did, so the walk and its houses stay as they were.
+ */
+function demonstrable(band: Band, c: Candidate): boolean {
+  if (band.teach !== 'light-needed') return true;
+  return lightDemoCell(c.puzzle, c.puzzle.givens, c.solution) !== null;
+}
+
+/**
  * The house for one place in the list (GENERATOR.md §6–§7, D15): candidates k = 0, 1, … from
  * `seedKey` (and `seedKey/k`), each checked in a staged order, cheap to costly (the generator,
- * the residents of houses 5 and 8, the grade with the band's techniques, d, T3, the episodes,
- * the insights, the manor's lead over its cycle, the teaching test, the opening: its kind, and
- * unlike `prevOpening`, the opening of the house before (D81), the turn test, every object
- * mattering, then the naive player); the first that passes wins, or the lowest d among the first
- * `lowestOf` that pass. Fails loudly after CANDIDATE_LIMIT candidates without one.
+ * the residents of houses 5 and 8, the grade with the band's techniques; on the ladder from house
+ * 8 the deepening search, D94; d, T3, the episodes, the insights, the manor's lead over its cycle,
+ * the teaching test, the opening: its kind, and unlike `prevOpening`, the opening of the house
+ * before (D81), the turn test, every object mattering, then the naive player); the first that
+ * passes wins, or the lowest d among the first `lowestOf` that pass. A ladder house's search
+ * starts at `start` (LADDER_STARTS, D96) and keeps its opener unlike `openers` (D95). Fails loudly
+ * after CANDIDATE_LIMIT candidates without one.
  */
-function choose(
+export function choose(
   label: string,
   id: number,
   band: Band,
@@ -334,13 +409,16 @@ function choose(
   cycleMax: number,
   searches: Search[],
   prevOpening: string | null = null,
+  openers: Openers | null = null,
+  start = 0,
 ): House {
   const misses: Partial<Record<Miss, number>> = {};
   const miss = (m: Miss): void => {
     misses[m] = (misses[m] ?? 0) + 1;
   };
   const pool: Qualified[] = [];
-  let k = 0;
+  const allowed = openersLeft(label, band, openers);
+  let k = start;
   for (; k < CANDIDATE_LIMIT; k++) {
     const seed = hashSeed(k === 0 ? seedKey : `${seedKey}/${String(k)}`);
     const made = makeCandidate(band, seed);
@@ -349,7 +427,7 @@ function choose(
       continue;
     }
     let c: Candidate = made;
-    let g: GradeResult;
+    let graded: GradeResult;
     if (band.residents !== null) {
       const placed = residentsFor(band, made);
       if (!placed) {
@@ -357,11 +435,57 @@ function choose(
         continue;
       }
       c = { ...made, puzzle: placed.puzzle };
-      g = placed.g;
-    } else g = grade(c.puzzle, { maxTech: band.maxTech, maxT4: band.maxT4 });
-    if (!g.ok || !g.grade) {
+      graded = placed.g;
+    } else graded = grade(c.puzzle, { maxTech: band.maxTech, maxT4: band.maxT4 });
+    if (!graded.ok || !graded.grade) {
       miss('grade');
       continue;
+    }
+    let g: Graded = { ...graded, grade: graded.grade };
+    if (band.depth) {
+      const spec = band.depth;
+      if (
+        spec.startStalls > 0 &&
+        depthProfile(c.puzzle, band.maxTech, band.maxT4).stalls < spec.startStalls
+      ) {
+        miss('start');
+        continue;
+      }
+      const deep = deepen(
+        c,
+        band,
+        hashSeed(`${seedKey}/walk/${String(k)}`),
+        {
+          evals: DEEPEN_EVALS,
+          t0: DEEPEN_T0,
+          t1: DEEPEN_T1,
+          shelfShare: DEEPEN_SHELF_SHARE,
+          abortAt: DEEPEN_ABORT_AT,
+          lesson: band.teach === null ? null : (x, gx) => teaches(band, x, gx),
+        },
+        {
+          stalls: spec.stalls,
+          laterAt: spec.laterAt,
+          tail: spec.tail,
+          auto: spec.auto,
+          dMin: band.d[0],
+          dMax: band.d[1],
+          needT3: band.needT3,
+          kinds: spec.kinds,
+          openers: allowed,
+          banPattern: openers?.pattern ?? null,
+        },
+      );
+      if (!deep) {
+        miss('depth');
+        continue;
+      }
+      if (openers?.count2 && deep.pr.real.some((r) => r.at === 0 && kindOf(r.kind) === 'count-2')) {
+        miss('opening');
+        continue;
+      }
+      c = deep.c;
+      g = deep.g;
     }
     if (sorted(g.placed).join() !== sorted(c.solution).join()) {
       throw new Error(`${label}: the grader's solution is not the only one (seed ${String(seed)})`);
@@ -387,11 +511,11 @@ function choose(
       miss('manor');
       continue;
     }
-    if (!teaches(band, c, g)) {
+    if (!teaches(band, c, g) || !demonstrable(band, c)) {
       miss('teach');
       continue;
     }
-    if (!opensRight(c.puzzle, band) || !opensAs(c.puzzle, band, prevOpening)) {
+    if (!band.depth && (!opensRight(c.puzzle, band) || !opensAs(c.puzzle, band, prevOpening))) {
       miss('opening');
       continue;
     }
@@ -422,9 +546,10 @@ function choose(
   searches.push({
     label,
     role: band.role,
-    tried: Math.min(k + 1, CANDIDATE_LIMIT),
+    tried: Math.min(k + 1, CANDIDATE_LIMIT) - start,
     misses,
     kept: pool.length,
+    chosen: best.k,
   });
   return {
     id,
@@ -484,8 +609,10 @@ function techOf(h: House): Tech {
 export function buildLevels(opts: BuildOptions = {}): Built {
   const upTo = opts.upTo ?? LEVEL_COUNT;
   const log = opts.log ?? (() => undefined);
+  const starts = opts.starts ?? LADDER_STARTS;
   const searches: Search[] = [];
   const byId = new Map<number, House>();
+  const openers: Openers = { recent: [], count2: false, pattern: null };
   const one = (id: number, cycleMax = 0): void => {
     const band = bandFor(id);
     const before = byId.get(id - 1);
@@ -497,8 +624,17 @@ export function buildLevels(opts: BuildOptions = {}): Built {
       cycleMax,
       searches,
       before && band.newOpening ? openingOf(parseHouse(before), techOf(before)) : null,
+      band.depth ? openers : null,
+      band.depth ? (starts[id] ?? 0) : 0,
     );
+    if (band.depth) {
+      const pr = depthProfile(parseHouse(house), band.maxTech, band.maxT4);
+      openers.recent = [...openers.recent, openerClass(pr)].slice(-OPENER_MEMORY);
+      if (pr.real.some((r) => r.at === 0 && kindOf(r.kind) === 'count-2')) openers.count2 = true;
+      openers.pattern = patternOf(pr);
+    }
     byId.set(id, house);
+    opts.onHouse?.(house, searches[searches.length - 1] as Search);
     if (id % LOG_EVERY_HOUSES === 0) log(`house ${String(id)} (${String(byId.size)} built)`);
   };
   for (const h of tutorialHouses()) if (h.id <= upTo) byId.set(h.id, h);

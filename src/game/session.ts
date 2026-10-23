@@ -5,6 +5,7 @@ import {
   HINT_COOLDOWN_S,
   MS_PER_S,
 } from '../config';
+import type { HintExplain } from '../core/hint';
 import type { PlayEvent, PlayState } from '../core/state';
 import type { HouseInProgress } from '../platform/storage';
 
@@ -94,12 +95,17 @@ export class HouseSession {
 }
 
 /**
- * The free hint's cooldown (D32): after each hint the next one waits HINT_COOLDOWN_S seconds of
- * play, counted across houses for the session (paused time excluded).
+ * The free hint's cooldown (D32, D98): after each hint the next one waits HINT_COOLDOWN_S seconds of
+ * play, counted across houses and kept by the save (paused time excluded). The first press shows
+ * the reason and starts the cooldown for now (`used`); the hint is used at the second press, or
+ * when the player's own move places what the reason shows (`confirm`: the cooldown starts again
+ * from then); any other move that clears the reason gives the recharge back (`refund`).
  */
 export class HintClock {
   private now = 0;
   private readyAt = 0;
+  /** The ready time from before the first press, while its reason waits for use. */
+  private before: number | null = null;
 
   tick(ms: number): void {
     this.now += ms / MS_PER_S;
@@ -119,9 +125,55 @@ export class HintClock {
     return this.remaining / HINT_COOLDOWN_S;
   }
 
+  /** The first press showed a reason: the cooldown runs until it is used or refunded. */
   used(): void {
+    this.before = this.readyAt;
     this.readyAt = this.now + HINT_COOLDOWN_S;
   }
+
+  /** The hint was used (its second press, or the player's own move did it): the cooldown starts. */
+  confirm(): void {
+    this.before = null;
+    this.readyAt = this.now + HINT_COOLDOWN_S;
+  }
+
+  /** A move cleared the reason before the hint was used: the ready time from before comes back. */
+  refund(): void {
+    if (this.before === null) return;
+    this.readyAt = this.before;
+    this.before = null;
+  }
+
+  /** The recharge from the save: ready in `seconds` (within 0 and the cooldown; 0 if broken). */
+  restore(seconds: number): void {
+    const s = Number.isFinite(seconds) ? Math.min(HINT_COOLDOWN_S, Math.max(0, seconds)) : 0;
+    this.before = null;
+    this.readyAt = this.now + s;
+  }
+
+  /**
+   * The recharge of a save that landed after the boot (D47): a longer one takes over, as the
+   * merge keeps the longer; a shorter one changes nothing (round 3's code audit, DÜŞÜK 2).
+   */
+  adopt(seconds: number): void {
+    if (seconds > this.remaining) this.restore(seconds);
+  }
+}
+
+/**
+ * The player's own move used the hint whose reason was showing (D98): it put a ghost on the cell
+ * the reason leads to, or took the wrong ghost it outlined off its cell. Its cooldown then starts;
+ * any other move gives the recharge back (`HintClock`).
+ */
+export function usesReason(r: HintExplain, events: readonly PlayEvent[]): boolean {
+  return events.some((e) => {
+    if (r.kind === 'place') {
+      if (e.type === 'placed') return e.cell === r.cell;
+      return (e.type === 'moved' || e.type === 'relocated') && e.to === r.cell;
+    }
+    if (e.type === 'removed') return e.cell === r.cell;
+    return (e.type === 'moved' || e.type === 'relocated') && e.from === r.cell;
+  });
 }
 
 /**

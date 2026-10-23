@@ -29,6 +29,20 @@ export function hydrateProgress(data: SaveData): void {
   Object.assign(progress, data, { current: data.current ? copyInProgress(data.current) : null });
 }
 
+const merged = new Set<(stored: SaveData) => void>();
+
+/**
+ * Called after a save that landed after the boot has been merged in, with the stored save, so a
+ * running clock can take its longer recharge (round 3's code audit, DÜŞÜK 2). Gives back the
+ * unsubscribe.
+ */
+export function onLateSaveMerged(cb: (stored: SaveData) => void): () => void {
+  merged.add(cb);
+  return () => {
+    merged.delete(cb);
+  };
+}
+
 /**
  * A stored save that lands after the boot (a slow first read, or one retried after a failure) is
  * merged into the running progress (the furthest house wins), so a slow or flaky host store never
@@ -37,6 +51,7 @@ export function hydrateProgress(data: SaveData): void {
 export function adoptLateSave(s: SaveStore): void {
   s.onLateSave((stored) => {
     hydrateProgress(mergeSaves(stored, progress));
+    for (const cb of merged) cb(stored);
   });
 }
 
@@ -48,6 +63,16 @@ export function persistProgress(): Promise<boolean> {
   if (!store) return Promise.resolve(false);
   const current = progress.current?.id === progress.house ? progress.current : null;
   return store.save({ ...progress, current: current ? copyInProgress(current) : null });
+}
+
+/**
+ * The hint's recharge (D98) written with the progress: a flush outside play (the finale, the held
+ * card, the slide, a house with no input yet) keeps it without a house in progress (round 3's code
+ * audit, DÜŞÜK 1).
+ */
+export function recordHintRecharge(seconds: number): Promise<boolean> {
+  progress.hintReadyIn = seconds;
+  return persistProgress();
 }
 
 /**

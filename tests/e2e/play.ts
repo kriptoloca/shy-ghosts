@@ -3,6 +3,7 @@ import { parseHouse, type HouseModel } from '../../src/core/house';
 import type { DebugHouse, DebugRecord } from '../../src/dev/debug';
 import type { DrawnState } from '../../src/game/board';
 import type { ViewState } from '../../src/game/view';
+import { RESULT_GUARD_MS } from '../../src/config';
 import { SAVE_KEY } from '../../src/platform/storage';
 import { Screen } from '../support/screen';
 import { CANVAS, TEST, waitNeutral, waitState } from './helpers';
@@ -56,6 +57,20 @@ export async function press(page: Page, name: 'undo' | 'hint', off = 0): Promise
   const p = await button(page, name);
   const d = (off * p.r) / Math.SQRT2;
   await page.mouse.click(p.x - d, p.y - d);
+}
+
+/**
+ * The held result card (D99): waits until it has passed its guard, then a tap away from the board
+ * and the buttons continues to the next house.
+ */
+export async function continueCard(page: Page): Promise<void> {
+  await waitState(
+    page,
+    (s) => s.phase === 'card' && (s.cardMs ?? -1) >= RESULT_GUARD_MS,
+    'the result card, past its guard',
+  );
+  const p = await corner(page);
+  await page.mouse.click(p.x, p.y);
 }
 
 /** A point on the canvas away from the board and the buttons (the top band's left end). */

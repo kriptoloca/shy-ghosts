@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 import {
   DEMO_IDLE_MS,
   DEMO_SKIP_FROM_MS,
+  RESULT_GUARD_MS,
   FLOOR_MARGIN,
   MARK_HALO,
   MARK_SHARE,
@@ -16,6 +17,7 @@ import type { DebugHouse } from '../../src/dev/debug';
 import { RULE_WORDS } from '../support/rule-words';
 import { CANVAS, TEST, neutralState, state, test, waitNeutral, waitState } from './helpers';
 import {
+  continueCard,
   center,
   corner,
   drag,
@@ -63,8 +65,11 @@ test('a tap left over from the finale never skips the next demonstration (house 
   const away = await corner(page);
   await solve(page);
   await waitState(page, (s) => (s.beatMs ?? 0) >= 700, 'past the finale guard');
-  // three quick taps: the first skips the beat, the second ends the slide (house 5's
-  // demonstration starts at once), the third lands in its first DEMO_SKIP_FROM_MS and does nothing
+  // a tap skips the beat: the held card rises (D99); past its guard, three quick taps: the first
+  // continues the card, the second ends the slide (house 5's demonstration starts at once), the
+  // third lands in its first DEMO_SKIP_FROM_MS and does nothing
+  await page.mouse.click(away.x, away.y);
+  await waitState(page, (s) => s.phase === 'card' && (s.cardMs ?? -1) >= RESULT_GUARD_MS, 'card');
   await page.mouse.click(away.x, away.y);
   await page.mouse.click(away.x, away.y);
   await page.mouse.click(away.x, away.y);
@@ -133,7 +138,7 @@ test("the hint's reason stays at 5 s and at 10 s; the next tap takes it away and
   expect((await settledEqualsRules(page)).ghosts.map(([c]) => c)).toEqual([free]);
 });
 
-test('a new screen size keeps the hint’s reason, and the solve time during the finale (the round-1 code audit, DÜŞÜK 6)', async ({
+test('a new screen size keeps the hint’s reason, and the solve time on the held card (the round-1 code audit, DÜŞÜK 6; D99)', async ({
   page,
 }) => {
   await open(page, 'reset=1&house=12');
@@ -148,12 +153,19 @@ test('a new screen size keeps the hint’s reason, and the solve time during the
   const h = await house(page);
   const placed = (await settledEqualsRules(page)).ghosts.map(([c]) => c);
   for (const c of h.solution ?? []) if (!placed.includes(c)) await tap(page, c);
-  await waitState(page, (s) => s.phase === 'win' && s.timeShown !== null, 'the solve time');
+  const card = await waitState(
+    page,
+    (s) => s.phase === 'card' && s.timeShown !== null,
+    'the solve time on the card',
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   const portrait = await waitState(page, (s) => s.arrangement === 'portrait', 'portrait');
-  // the new board came during the beat, and shows the solve time (round 2's code audit, DÜŞÜK 6)
-  expect(portrait.phase).toBe('win');
+  // the new board and card came while the card held, and the card shows the solve time (round 2's
+  // code audit, DÜŞÜK 6)
+  expect(portrait.phase).toBe('card');
   expect(portrait.timeShown).not.toBeNull();
+  expect(portrait.card?.house).toBe(card.card?.house);
+  await continueCard(page);
   await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
 });
 
@@ -162,8 +174,9 @@ test('a new screen size during the slide into a house with a demonstration ends 
 }) => {
   await open(page, 'reset=1&house=4');
   await solve(page);
-  await waitState(page, (s) => s.phase === 'slide' || (s.beatMs ?? 0) > 1900, 'near the slide');
-  await waitState(page, (s) => s.phase !== 'win', 'the slide');
+  // the held card (D99): a tap continues, and the slide starts
+  await continueCard(page);
+  await waitState(page, (s) => s.phase === 'slide', 'the slide');
   await page.setViewportSize({ width: 600, height: 600 });
   const s = await waitState(page, (x) => x.shown === 5 && x.phase === 'play', 'house 5');
   expect(s.arrangement).toBe('square');
@@ -232,9 +245,15 @@ test('a settled room keeps its floor: its pixels away from the ring equal the un
   const h = await house(page);
   const m = model(h);
   const cellPx = (await state(page))?.cell ?? 0;
-  // a room with two empty cells: a ghost on one, the other's middle sampled before and after
-  const room = m.roomCells.findIndex((cs) => cs.filter((c) => !m.blocked[c]).length >= 2);
-  const [a, b] = (m.roomCells[room] ?? []).filter((c) => !m.blocked[c]) as [number, number];
+  // a room with an unlit empty cell and another empty cell: a ghost on the unlit one, the
+  // other's middle sampled before and after (the first empty cell may be lit since round 3's
+  // rebuild, and a ghost there is lit, not calm)
+  const room = m.roomCells.findIndex(
+    (cs) => cs.some((c) => m.candidate[c]) && cs.filter((c) => !m.blocked[c]).length >= 2,
+  );
+  const cells = m.roomCells[room] ?? [];
+  const a = cells.find((c) => m.candidate[c]) as number;
+  const b = cells.find((c) => !m.blocked[c] && c !== a) as number;
   const mid = await canvasCenter(page, b);
   const patch = [-1, 0, 1].flatMap((dy) =>
     [-1, 0, 1].map((dx) => ({ x: mid.x + (dx * cellPx) / 8, y: mid.y + (dy * cellPx) / 8 })),

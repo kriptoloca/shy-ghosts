@@ -1,6 +1,9 @@
-import type { HintExplain } from '../core/hint';
+import type { HintExplain, ReasonBeat } from '../core/hint';
 import type { PlayEvent } from '../core/state';
 import type { DrawnState } from '../game/board';
+import type { CardShown } from '../game/card';
+import type { FinaleRecord } from '../game/scenes/GameScene';
+import type { ReasonPicture } from '../game/reason';
 import type { MoveKind } from '../game/session';
 import type { ViewState } from '../game/view';
 
@@ -21,17 +24,25 @@ export interface GhostDebugState {
   paused: boolean;
   /** The scene takes pointer input now (no platform pause, no resume grace). */
   input: boolean;
-  /** Game: a teaching demonstration (D70), playing, the win beat, or the next house sliding in. */
-  phase?: 'demo' | 'play' | 'win' | 'slide';
+  /**
+   * Game: a teaching demonstration (D70), playing, the win beat, the held result card (D99), or the
+   * next house sliding in.
+   */
+  phase?: 'demo' | 'play' | 'win' | 'card' | 'slide';
   /** Game: ms on the scene clock since the house was solved, during its finale; else null (D73). */
   beatMs?: number | null;
   /**
-   * The last finale (D73): its beat on the scene's clock, from the solve to the slide (a tap may
-   * cut it short), the whole of it on the wall clock, from the solve to the next house, and how
-   * far the clock moved in the frame the slide began, in ms; and how many ghosts still played a
-   * settle's motion when the ghosts began to hop (null without a hop).
+   * The last finale (D73, D99): its beat on the scene's clock, from the solve to the card (a tap
+   * may cut it short); on the wall clock, from the solve until the card was up (null when it never
+   * finished rising) and the slide, from the tap that continued to the next house; how far the
+   * clock moved in the frame the card began, in ms; and how many ghosts still played a settle's
+   * motion when the ghosts began to hop (null without a hop).
    */
-  finale?: { beatMs: number; wallMs: number; stepMs: number; settling: number | null } | null;
+  finale?: FinaleRecord | null;
+  /** Game: ms on the scene clock since the result card began, while it holds; else null (D99). */
+  cardMs?: number | null;
+  /** What the result card shows, while it holds (D99); else null. */
+  card?: CardShown | null;
   /** Teaching demonstrations started since the Game began (D70; none on a resume). */
   demos?: number;
   /** The house on screen: when it appeared, and when its input opened (performance.now(), ms). */
@@ -75,6 +86,8 @@ export interface GhostDebugState {
   effects?: { made: number; used: number };
   /** The hint's reason is drawn on the board (D86). */
   reasonShown?: boolean;
+  /** What the reason has drawn so far: beats, bands, digits, dots (D98); null with none. */
+  reasonPicture?: ReasonPicture | null;
   /** The solve time shown below the board (D85), or null. */
   timeShown?: string | null;
   /**
@@ -112,7 +125,15 @@ export interface NeutralState {
 /** A pending hint's reason as the hooks show it (no cell for a placement under `?playtest=1`). */
 export type DebugHintReason =
   | Extract<HintExplain, { kind: 'remove' }>
-  | (Omit<Extract<HintExplain, { kind: 'place' }>, 'cell'> & { cell?: number });
+  | (Omit<Extract<HintExplain, { kind: 'place' }>, 'cell' | 'beats'> & {
+      cell?: number;
+      beats: DebugReasonBeat[];
+    });
+
+/** A beat of the reason as the hooks show it: the target's cell left out under `?playtest=1`. */
+export type DebugReasonBeat =
+  | Exclude<ReasonBeat, { kind: 'target' }>
+  | (Omit<Extract<ReasonBeat, { kind: 'target' }>, 'cell'> & { cell?: number });
 
 /** A house's board when it opened and every event list the scene played since, with its kind. */
 export interface DebugRecord {
@@ -156,6 +177,17 @@ export interface GhostDebug {
   events?: () => DebugRecord;
   /** The house finished last: its data, its record and its rules at the end (null before one). */
   previous?: () => { house: DebugHouse; events: DebugRecord; rules: ViewState } | null;
+  /**
+   * The ghosts' sprites as drawn now (design px, the body's angle in degrees) and the afterimages of
+   * relocations (D100), for the glide's frame test; it states the rules, so not under `?playtest=1`.
+   */
+  sprites?: () => DebugSprites | null;
+}
+
+/** The ghost sprites and the relocation afterimages on screen now (D100). */
+export interface DebugSprites {
+  ghosts: { x: number; y: number; angle: number }[];
+  afterimages: { cell: number; alpha: number }[];
 }
 
 declare global {

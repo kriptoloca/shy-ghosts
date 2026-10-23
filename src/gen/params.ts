@@ -96,11 +96,90 @@ export const CANDIDATE_LIMIT = 50_000;
 export const SPLIT_TWICE_SEGMENTS = 3;
 /** Houses 4 and 5 keep the lowest d among this many qualifying candidates (D15, D20, D81). */
 export const TEACH_POOL = 50;
+
+// ---- Depth (§4.8, §6.2; Gate B tune round 3, D92–D96) -----------------------------------------
+
 /**
- * House 8, the first lamp, keeps the lowest d among this many: its light lesson, its resident
- * beside the beam, no shadow and no free opening leave few qualifying candidates (D81).
+ * The depth profile's tags, cheapest first (src/gen/depth.ts, D92): each placed ghost carries the
+ * hardest step since the ghost before it. free, a room with one free cell before any deduction;
+ * elim, a last free cell after sight eliminations; claim, a room lying in one line; budget, "every
+ * open stretch needs a ghost"; cross, count and chain, the real insights.
  */
-export const LIGHT_POOL = 5;
+export const DEPTH_RANK = {
+  free: 0,
+  elim: 1,
+  claim: 2,
+  budget: 3,
+  cross: 4,
+  count: 5,
+  chain: 6,
+} as const;
+
+/**
+ * The deepening search (src/gen/deepen.ts, D94): simulated annealing over room borders and
+ * shelves, DEEPEN_EVALS evaluations, the temperature falling from DEEPEN_T0 to DEEPEN_T1 score
+ * points; DEEPEN_SHELF_SHARE of the moves move a shelf, the others give a border cell to a
+ * neighbouring room; a walk with no stall after DEEPEN_ABORT_AT of its evaluations stops, and one
+ * stops after DEEPEN_TRY_FACTOR × DEEPEN_EVALS tries of a move.
+ */
+export const DEEPEN_EVALS = 6000;
+export const DEEPEN_T0 = 8;
+export const DEEPEN_T1 = 0.5;
+export const DEEPEN_SHELF_SHARE = 0.15;
+export const DEEPEN_ABORT_AT = 0.35;
+export const DEEPEN_TRY_FACTOR = 20;
+/**
+ * The walk's score, in points (D94): DEEPEN_W_STALL per stall up to the target + 1; −DEEPEN_W_TAIL
+ * per tail ghost over the target and −DEEPEN_W_AUTO per autopilot-run ghost over it;
+ * −DEEPEN_W_LATER without a later stall; +DEEPEN_W_THINK per thinking placement; −DEEPEN_W_D per d
+ * point outside the window; −DEEPEN_W_T3 without a required T3; +DEEPEN_W_KIND per real kind up
+ * to the target; −DEEPEN_W_OPENER for an opener the house may not use, and again for the house
+ * before's pattern. A house that meets the target loses DEEPEN_IDLE_PENALTY per idle object and
+ * DEEPEN_LESSON_PENALTY when its lesson fails.
+ */
+export const DEEPEN_W_STALL = 100;
+export const DEEPEN_W_TAIL = 45;
+export const DEEPEN_W_AUTO = 25;
+export const DEEPEN_W_LATER = 50;
+export const DEEPEN_W_THINK = 3;
+export const DEEPEN_W_D = 12;
+export const DEEPEN_W_T3 = 60;
+export const DEEPEN_W_KIND = 20;
+export const DEEPEN_W_OPENER = 40;
+export const DEEPEN_IDLE_PENALTY = 80;
+export const DEEPEN_LESSON_PENALTY = 120;
+/**
+ * Opener classes (D95): a real insight first (a cross, a count of 2–4 rooms) or the pattern of the
+ * first ghost (the budget, a claim); ≤ T2 houses open with a cross, the budget or a claim.
+ */
+export const OPENERS_ANY = ['cross', 'count-2', 'count-3', 'count-4', 'budget', 'claim'] as const;
+export const OPENERS_T2 = ['cross', 'budget', 'claim'] as const;
+/** A ladder house opens unlike this many houses before it (D95). */
+export const OPENER_MEMORY = 2;
+/**
+ * Where the build's search starts for each ladder house (D96, A8): the candidate the deepening
+ * search found first from k = 0. `npm run levels:starts` finds them again after a pipeline change;
+ * a start that no longer passes only makes the build search on from it.
+ */
+export const LADDER_STARTS: Readonly<Record<number, number>> = {
+  8: 157,
+  9: 256,
+  10: 256,
+  11: 4325,
+  12: 3328,
+  13: 539,
+  14: 825,
+  15: 8550,
+  16: 3976,
+  17: 459,
+  18: 5884,
+  19: 2135,
+  20: 415,
+  21: 61,
+  22: 916,
+  23: 1242,
+  24: 477,
+};
 
 // ---- The list (§7, §8, D6, D7, D14) -------------------------------------------------------------
 
@@ -222,6 +301,30 @@ export interface Band {
    * ghosts in one line with a block between them; house 8, one beside the lamp's beam.
    */
   residents: 'block-pair' | 'beam-side' | null;
+  /**
+   * Gate B tune round 3 (houses 8–24, D93–D95): the depth the deepening search grows the house to
+   * (src/gen/deepen.ts), or null. The build also keeps the opener unlike the two houses before it,
+   * a two-room count in one opening only and the pattern unlike the house before.
+   */
+  depth: DepthSpec | null;
+}
+
+/** A ladder house's depth (D93): the target of the deepening search. */
+export interface DepthSpec {
+  /** Stalls only a real insight ends, at least. */
+  stalls: number;
+  /** One real step after at least this many ghosts. */
+  laterAt: number;
+  /** The tail: ghosts placed after the one the last real step placed, at most. */
+  tail: number;
+  /** The longest run of ghosts placed without a thought, at most. */
+  auto: number;
+  /** Distinct real kinds, at least. */
+  kinds: number;
+  /** The opener classes this rung may use (OPENERS_ANY, OPENERS_T2 or fewer). */
+  openers: readonly string[];
+  /** Walk only from candidates whose own profile stalls at least this often (a cheap filter). */
+  startStalls: number;
 }
 
 const base = {
@@ -240,6 +343,7 @@ const base = {
   opening: null,
   newOpening: false,
   openingKind: null,
+  depth: null,
 } as const;
 
 /** The naive cap on hard houses, cycle positions 1–9 and dailies; manors have their own (D16). */
@@ -283,26 +387,46 @@ const HARD6 = {
   naiveMax: NAIVE_MAX,
   opening: 'insight',
 } as const;
-/** The 7 × 7 hard houses 20–22. */
-const HARD7 = {
-  ...HARD6,
+/** Round 3's depth targets (D93): two real insights, one after two ghosts, a short tail. */
+const DEEP_T3: DepthSpec = {
+  stalls: 2,
+  laterAt: 2,
+  tail: 3,
+  auto: 3,
+  kinds: 2,
+  openers: OPENERS_ANY,
+  startStalls: 1,
+};
+/** Three stalls (houses 13–14 and 17–18; with eight rooms, 19–22). */
+const DEEP_T3_3: DepthSpec = { ...DEEP_T3, stalls: 3, startStalls: 0 };
+/** At ≤ T2 (the teach and rest houses): two stalls, crosses. */
+const DEEP_T2: DepthSpec = { ...DEEP_T3, kinds: 1, openers: OPENERS_T2, startStalls: 0 };
+/** A hard 7 × 7 house of round 3: T3 required, two real insights of two kinds. */
+const DEEP7 = {
+  role: 'hard',
   sides: [7],
   rooms: [7, 8],
-  furniture: [1, 3],
-  lamps: [1, 2],
-  d: [18, 30],
+  furniture: [2, 4],
+  lamps: [0, 1],
+  maxTech: 3,
+  needT3: true,
+  naiveMax: NAIVE_MAX,
+  newOpening: false,
+  depth: DEEP_T3,
 } as const;
-/** The rests 23–24: 6 × 6 with a lamp, no free opening. */
-const REST6 = {
-  role: 'rest',
-  sides: [6],
-  rooms: [6, 6],
-  furniture: [0, 1],
-  lamps: [1, 1],
+/** A 7 × 7 house of round 3 at ≤ T2 (the teach and rest roles): two crosses. */
+const DEEP7_T2 = {
+  role: 'teach',
+  sides: [7],
+  rooms: [7, 7],
+  furniture: [2, 4],
+  lamps: [0, 1],
   maxTech: 2,
-  d: [8, 14],
-  opening: 'no-freebie',
+  newOpening: false,
+  depth: DEEP_T2,
 } as const;
+/** The 8-room 7 × 7 houses 19–22: three stalls. */
+const DEEP8 = { ...DEEP7, rooms: [8, 8], depth: DEEP_T3_3 } as const;
 /** A house of the ladder: its board, objects, techniques and d window, and what it changes. */
 type Rung = Pick<Band, 'role' | 'sides' | 'rooms' | 'furniture' | 'lamps' | 'maxTech' | 'd'> &
   Partial<Band>;
@@ -347,7 +471,9 @@ const LADDER: Record<number, Rung> = {
   },
   // 7: the first count (T3), at the opening
   7: { ...HARD6, rooms: [6, 6], furniture: [0, 1], lamps: [0, 0], d: [12, 24] },
-  // 8: the light, no shadow yet; a resident beside the beam
+  // Gate B tune round 3 (D93): from house 8 every house needs real insights spread through the
+  // solve (8, the first lamp: one after its first ghost), 7 × 7 from house 9, d inside Gate A's
+  // moving-average budget (A4), the openers varied (D95)
   8: {
     role: 'teach',
     sides: [6],
@@ -355,82 +481,77 @@ const LADDER: Record<number, Rung> = {
     furniture: [0, 2],
     lamps: [1, 1],
     maxTech: 2,
-    d: [8, 16],
+    d: [10, 16],
     teach: 'light-needed',
-    lowestOf: LIGHT_POOL,
     residents: 'beam-side',
-    opening: 'no-freebie',
+    newOpening: false,
+    depth: {
+      ...DEEP_T3,
+      stalls: 1,
+      laterAt: 1,
+      kinds: 1,
+      openers: ['budget', 'claim'],
+      startStalls: 0,
+    },
   },
-  9: { ...HARD6, furniture: [1, 3], lamps: [0, 0], d: [12, 24] },
+  9: { ...DEEP7, rooms: [7, 7], furniture: [1, 3], d: [16, 22] },
   // 10: the shadow, light stops at a shelf
   10: {
-    role: 'teach',
-    sides: [5],
-    rooms: [5, 6],
-    furniture: [1, 2],
+    ...DEEP7_T2,
+    rooms: [7, 7],
+    furniture: [1, 3],
     lamps: [1, 1],
-    maxTech: 2,
-    d: [6, 14],
+    d: [12, 20],
     teach: 'shadow',
-    opening: 'no-freebie',
   },
-  11: { ...HARD6, furniture: [1, 3], lamps: [0, 1], d: [12, 24] },
-  // 12: a cross at the opening
-  12: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24], openingKind: 'cross' },
-  13: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24] },
-  14: { ...HARD6, furniture: [2, 3], lamps: [0, 1], d: [14, 24] },
-  // 15: the one rest of houses 4–20, with no free opening
+  11: { ...DEEP7, rooms: [7, 7], furniture: [1, 3], d: [16, 22] },
+  12: { ...DEEP7, d: [21, 25] },
+  // 13–14 and 17–19: three stalls, so houses 11–20 ask for more than 8–10 (B5's second condition)
+  13: { ...DEEP7, d: [21, 28], depth: DEEP_T3_3 },
+  14: { ...DEEP7, d: [21, 28], depth: DEEP_T3_3 },
+  // 15: round 2's rest is now a lean hard house (a count and a cross, d below 12–14's: A4)
   15: {
-    role: 'breather',
-    sides: [5],
-    rooms: [5, 6],
-    furniture: [1, 2],
-    lamps: [0, 1],
-    maxTech: 2,
-    d: [6, 12],
-    opening: 'no-freebie',
+    ...DEEP7,
+    rooms: [7, 7],
+    furniture: [1, 3],
+    d: [16, 20],
+    depth: { ...DEEP_T3, openers: OPENERS_ANY.filter((o) => o !== 'budget') },
   },
   // 16: three ghosts in one line split twice
   16: {
-    role: 'breather',
-    sides: [5],
-    rooms: [6, 7],
-    furniture: [2, 3],
-    lamps: [0, 0],
-    maxTech: 2,
-    d: [6, 12],
+    ...DEEP7_T2,
+    rooms: [7, 8],
+    d: [12, 20],
     teach: 'split-twice',
-    opening: 'no-freebie',
+    depth: { ...DEEP_T2, openers: ['cross', 'claim'] },
   },
-  // 17: the lit-line budget, a fully lit line stays empty
+  // 17: the lit-line budget, a fully lit line stays empty (it opens with the budget)
   17: {
-    role: 'teach',
-    sides: [6],
-    rooms: [6, 6],
-    furniture: [0, 2],
+    ...DEEP7,
+    rooms: [7, 7],
+    furniture: [0, 3],
     lamps: [1, 1],
-    maxTech: 2,
-    d: [8, 16],
+    d: [18, 28],
     teach: 'lit-line',
+    depth: { ...DEEP_T3_3, openers: ['budget'] },
   },
   // 18: two lamps, both needed
   18: {
-    role: 'teach',
-    sides: [6],
-    rooms: [6, 6],
-    furniture: [0, 2],
+    ...DEEP7,
+    rooms: [7, 7],
+    furniture: [0, 3],
     lamps: [2, 2],
-    maxTech: 2,
-    d: [8, 16],
+    d: [18, 28],
     teach: 'two-lamps',
-    opening: 'no-freebie',
+    depth: DEEP_T3_3,
   },
-  19: { ...HARD6, furniture: [1, 3], lamps: [1, 1], d: [14, 24] },
-  20: HARD7,
-  21: HARD7,
-  22: HARD7,
-  23: REST6,
-  24: REST6,
+  19: { ...DEEP8, d: [20, 28] },
+  20: { ...DEEP8, lamps: [1, 2], d: [29, 35] },
+  21: { ...DEEP8, lamps: [1, 2], d: [29, 35] },
+  22: { ...DEEP8, lamps: [1, 2], d: [29, 35] },
+  // 23: the rest, at ≤ T2; 24: a lean hard house (A4's lower 23–24)
+  23: { ...DEEP7_T2, role: 'rest', lamps: [1, 1], d: [12, 22] },
+  24: { ...DEEP7, rooms: [7, 7], furniture: [1, 3], d: [16, 24] },
 };
 
 /** The band of house `id` (4 … LEVEL_COUNT; GENERATOR.md §7). */

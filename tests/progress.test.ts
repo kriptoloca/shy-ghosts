@@ -1,18 +1,23 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  adoptLateSave,
   advanceHouse,
   attachSaveStore,
   hydrateProgress,
+  onLateSaveMerged,
   persistProgress,
   progress,
   recordHouseInProgress,
 } from '../src/game/progress';
+import { HintClock } from '../src/game/session';
 import {
   MemoryBackend,
   SAVE_KEY,
   SaveStore,
   defaultSave,
   type HouseInProgress,
+  type SaveData,
+  type StorageBackend,
 } from '../src/platform/storage';
 
 /**
@@ -72,5 +77,50 @@ describe('progress guards', () => {
     progress.current = slot(1, { ghosts: [2] });
     expect(await persistProgress()).toBe(true);
     expect(await stored()).toMatchObject({ house: 37, current: null });
+  });
+});
+
+describe('a save that lands after the boot (D47, D98)', () => {
+  /** A store whose first read hangs past the load timeout, then answers `stored` on `answer()`. */
+  async function lateStore(): Promise<{ store: SaveStore; answer: (s: SaveData) => void }> {
+    let resolve: (v: string | null) => void = () => undefined;
+    const backend: StorageBackend = {
+      get: () =>
+        new Promise<string | null>((r) => {
+          resolve = r;
+        }),
+      set: () => Promise.resolve(),
+    };
+    const store = new SaveStore(backend, SAVE_KEY, 20, 10_000);
+    hydrateProgress(await store.load()); // a fresh save: the first read missed its 20 ms
+    attachSaveStore(store);
+    return { store, answer: (s) => resolve(JSON.stringify(s)) };
+  }
+
+  it("the merged recharge reaches a running hint clock: a longer one takes over, a shorter one changes nothing (round 3's code audit, DÜŞÜK 2)", async () => {
+    for (const [stored, want] of [
+      [60, 60],
+      [10, 20],
+    ] as const) {
+      const { store, answer } = await lateStore();
+      const clock = new HintClock();
+      clock.restore(20);
+      const seen: number[] = [];
+      const off = onLateSaveMerged((s) => {
+        seen.push(s.hintReadyIn);
+        clock.adopt(s.hintReadyIn);
+        progress.hintReadyIn = clock.remaining;
+      });
+      adoptLateSave(store);
+      // the stored save lands while the player is already in house 1: the next save merges it
+      const saving = store.save({ ...progress });
+      answer({ ...defaultSave(), house: 7, housesSolved: 6, hintReadyIn: stored });
+      expect(await saving).toBe(true);
+      off();
+      expect(seen).toEqual([stored]);
+      expect(progress.house).toBe(7);
+      expect(clock.remaining).toBe(want);
+      expect(progress.hintReadyIn).toBe(want);
+    }
   });
 });

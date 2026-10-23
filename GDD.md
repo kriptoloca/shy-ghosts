@@ -34,7 +34,9 @@ below exists to lift Feel by making the rule itself the juice (evaluation §6).
    its eyes; **lit** (a lamp's light reaches it) → it squints and shields its eyes; **calm** → it
    sighs, glances along its row and column, and its room warms to a soft glow.
 4. Every room settled (one calm ghost each) → the house lights up room by room, the ghosts turn
-   to the camera, smile, float up and wave → the next house slides in by itself.
+   to the camera, smile, float up and wave → a result card holds the moment (the house number,
+   the solve time, a bulb with a tick when no hint was shown) → a tap, and the next house slides
+   in (D99).
 5. No fail state, no timer that can fail you. Undo is unlimited and free; a hint is one tap away.
    One **daily house** per UTC date with a forgiving streak and a personal-best time.
 
@@ -79,16 +81,23 @@ Every house has exactly one solution and can be solved by deduction alone, witho
 - **Undo:** reverts the last placement, removal, relocation, carried ghost, mark stroke or hint
   action; unlimited and free. The undo history lives for the session; a reload restores the
   board, not the history.
-- **Hint, in two presses** (D74). The first press shows the reason and places nothing: if a
+- **Hint, in two presses** (D74, D98). The first press shows the reason and places nothing: if a
   placed ghost differs from the solution, the first such ghost in reading order trembles inside a
   dashed outline; otherwise the grader runs from the board as it stands (every ghost on it is
-  right, so each counts as a resident) to its next forced placement, and the lines and rooms its
-  steps use stay bright while the rest of the board dims, the target room pulsing, for 2 s; the
-  cell itself stays hidden. The second press does it: the wrong ghost floats away, or the forced
-  ghost appears (the player's own move to a ghost in between completes it instead). Both presses
-  are one hint and one cooldown. Free with a 90 s cooldown when rewarded ads are not supported
-  (the graybox uses this form); otherwise a rewarded `hint` ad, granted even when the ad fails
-  (§8).
+  right, so each counts as a resident) to its next forced placement, and the board plays its steps
+  as beats of 700 ms, text-free but for digits: a claim's room washed pale and its line under a
+  band; a count's k lines under bands, each with the digit k just outside the board, and its rooms
+  washed pale; a cross's see-through ghost with dotted rays along its row and column while the room
+  it would empty flashes the "seen" pose; every cell a step removes gets a hint dot (the marks'
+  dot in deep blue); last, the target room pulses with the digit 1, its other cells dotted or
+  reached by the dotted line from the ghost that sees them. The whole picture then holds; the cell
+  itself bears no mark, but the room's other cells do, so a reader finds it by elimination (the
+  hooks under `?playtest=1` still never name it). The second press does it: the wrong ghost floats away, or the forced ghost
+  appears. Both presses are one hint (counted at the first press). The cooldown starts when the
+  hint is used: the second press, or the player's own move that does what the reason shows; any
+  other move clears the reason and gives the recharge back, and the save keeps the recharge.
+  Free with a 90 s cooldown when rewarded ads are not supported (the graybox uses this form);
+  otherwise a rewarded `hint` ad, granted even when the ad fails (§8).
 - A **tap** is a pointer-down and pointer-up in the same cell with < 24 design px of movement.
   Taps during the resume grace after a platform pause never count. Optional on desktop: arrow keys
   move a cell cursor and Enter taps.
@@ -96,8 +105,9 @@ Every house has exactly one solution and can be solved by deduction alone, witho
 ### 3.2 Win, no fail
 
 The board is checked after every change. When solved: input locks, the win beat plays (§3a), the
-solve time is recorded (from the first input in this house, paused time excluded), progress is
-saved, and the next house slides in by itself; a tap skips the beat. Nothing can be lost.
+solve time is recorded (from the first input in this house, paused time excluded) and progress is
+saved; then the result card holds (D99) until a tap, which slides the next house in. A tap skips
+the beat; a reload during the card opens the next house. Nothing can be lost.
 
 ### 3.3 The three tutorial houses (hand-made data, `src/data/tutorial.ts`)
 
@@ -133,24 +143,29 @@ replay skips at once).
 | 2 | (0,1), as above | the same trails, shorter (600 ms) |
 | 3 | (0,3), as above | a see-through hand drags along the resident's row and marks pop in under it (700 ms) |
 | 5 | two of the solution's ghosts, in one line with the bookshelf between them | each one's trail runs toward the other and stops at the shelf with a small bump (900 ms) |
-| 8 | one of the solution's ghosts, unlit, beside the lamp's beam | the lamp's light sweeps out along its row and column (500 ms); a see-through copy of the resident steps into it and squints (400 ms); the copy stands only on a lit cell, never on a solution cell |
+| 8 | one of the solution's ghosts, unlit, beside the lamp's beam | the lamp's light sweeps out along its row and column (500 ms); a see-through copy of the resident steps diagonally into it and squints (400 ms); the copy stands on a lit cell that is not a solution cell and that no resident sees, so it shows the light alone (D103; the build checks that house 8 has one) |
 | 10 | none | the lamp's light sweeps out and stops at the bookshelf; a see-through copy behind the shelf stays calm (never on a solution cell; with no such cell, only the stop) |
 
 The residents of 5 and 8 are an exception to the brief's non-goal "givens outside the three
 tutorial houses": they teach and never make a house easier than its band (the generator picks
 them first and still requires the band's lesson, GENERATOR.md §6).
 
-**Difficulty after the tutorial** (Gate B tune round 2, D80, D81; GENERATOR.md §4.7, §7): each
-house 4–20 either teaches one new pattern or rule or opens with a real insight, measured by an
-autopilot that plays only the one-look patterns of a Queens player. The lessons: 4 the claim (a
-room lying in one line claims it), 5 the bookshelf, 6 the split budget (a split line holds two
-ghosts), 8 the light, 10 the shadow, 16 three ghosts in one line split twice, 17 the lit-line
-budget (a fully lit line stays empty), 18 two lamps. The real insights, at the opening: a count
-(k rooms fill k lines) in 7, 9, 11, 13, 14, 20 and 21; a cross (one cell sees a whole room from
-two sides) in 12, 19 and 22, then a count. 15, 23 and 24 rest. No free opening after house 10
-but 17's lesson; no two houses in a row open alike. From house 25 and in every daily, round 1's
-rule holds (D67): two real insight episodes, and the houses that carry difficulty ask for two
-kinds. Every block and lamp matters.
+**Difficulty after the tutorial** (Gate B tune rounds 2 and 3, D80, D81, D92–D95; GENERATOR.md
+§4.7, §4.8, §7): houses 4–7 each teach one new pattern or rule (4 the claim, a room lying in one
+line; 5 the bookshelf; 6 the split budget, a split line holds two ghosts; 7 the first count, k
+rooms fill k lines), measured by an autopilot that plays only the one-look patterns of a Queens
+player. From house 8 every house asks for real insights spread through the solve (the depth
+profile, D92): houses 9–24 stall at least twice where only a count or a cross (one cell sees a
+whole room from two sides) moves the solve on, one of them after two ghosts or more; at most 3
+ghosts fall after the last insight and at most 3 in a row without a thought; houses 13, 14 and
+17–22 stall three times; the hard houses use two kinds of insight. House 8, the first lamp, is the
+one planned rest: one cross, after its first ghost. Boards grow 5 × 5 (4–6) → 6 × 6 (7–8) → 7 × 7
+(9–24) and never shrink before house 25. The lessons stay at 8 (the light), 10 (the shadow), 16
+(three ghosts in one line split twice), 17 (the lit-line budget, a fully lit line stays empty)
+and 18 (two lamps). No house opens like either of the two before it, a two-room count opens one
+house only (9), and no house repeats the shape of the solve before it. From house 25 and in every
+daily, round 1's rule holds (D67): two real insight episodes, and the houses that carry difficulty
+ask for two kinds. Every block and lamp matters.
 
 ## 3a. Feel spec (`pebblit-game-craft` workflow A; brief §4.2)
 
@@ -167,13 +182,14 @@ success gets the stack. Values are starting points behind named constants in
 | Place → lit | the ghost squints and shields its eyes; the lit cells of that lamp flash warm once (no repeat, D73) | soft "hiss", −10 dB | none | none | 200 ms |
 | A calm ghost becomes seen or lit (D22) | its room's ring fades, its content face goes and its progress dot empties, tick and all (D84) | none of its own (the placement's eep or hiss covers it) | none | none | 100 ms |
 | One move calms k ghosts | each freed ghost sighs (scale 1.1, puff) 70 ms after the previous, rising one semitone each: the cascade from one tap | rising ticks | none | 10 ms on the last | 70 ms × k |
-| Relocate | the ghost glides to the new cell (ease in-out), then the outcome row above | soft swish, −14 dB | none | none | 220 ms |
-| Drag a ghost (D72) | lifted (scale 1.1), it follows the finger from cell to cell; dropped in its room or in a room without a ghost it glides there (the relocate row); dropped anywhere else it glides back with the 2 px nudge | soft swish, −14 dB | none | none | 220 ms |
+| Relocate | the ghost glides to the new cell (ease in-out), leaning 8° toward its way and straight on arrival; a see-through afterimage stays on the cell it left and fades (alpha 0.4 → 0, 300 ms); then the outcome row above (D100); a relocation is neutral: no success stack | soft swish, −14 dB | none | none | 320 ms |
+| Drag a ghost (D72) | lifted (scale 1.1), it follows the finger from cell to cell; dropped in its room or in a room without a ghost it glides there (the relocate row); dropped anywhere else it glides back with the 2 px nudge | soft swish, −14 dB | none | none | 320 ms |
 | Remove | floats up 20 px and fades | whoosh, −14 dB | none | none | 180 ms |
 | Mark stroke | dots pop in per cell (scale 0 → 1) / shrink when erased | tick, −20 dB | none | none | 60 ms per cell |
-| Hint (D74, D86) | first press, the reason: the lines and rooms that force the next step stay bright while the rest of the board dims, and the target room pulses every 500 ms; the cell stays hidden; a wrong ghost trembles (4 × 30 ms) inside a dashed outline; it stays until the player's next move (a tap, a drag, an undo) or the second press, and a pause freezes it. Second press: the place or remove row | sparkle | none | none | the reason until the next move, then the row |
-| Teaching demonstration (§3.3, D70, D83) | in houses 1, 2, 3, 5, 8 and 10, before input opens: the resident blinks awake and dotted trails run out along its row and column (900 ms; 600 ms in house 2); in house 1 a see-through ghost appears on (0,1) and both cover their eyes; in house 3 a see-through hand drags along the resident's row and marks pop in under it (700 ms); in house 5 each resident's trail stops at the bookshelf with a bump; in house 8 the lamp's light sweeps out (500 ms) and a see-through copy of the resident steps into it and squints (400 ms); in house 10 the light stops at the bookshelf and a see-through copy behind it stays calm. Each ends on an 800 ms hold frame that shows the whole lesson, and plays again after 5 s without input until the house's first placement (house 3: its first mark), at most 3 times, never while a finger or a button is down or a hint's reason shows | none (Epic 4) | none | none | ≤ 2.3 s; a tap skips it, a first play never in its first 300 ms |
-| House solved | hit stop 50 ms; rooms light one by one in room-id order (reading order of each room's first cell, so the light sweeps down the house, D9) every `min(110, 900 / R)` ms, each brighter than the last (alpha 0.3 → 0.6) and each with a tick larger and higher than the last (scale 1 → 1.6, 4 px higher a room): the rising ticks, +1 semitone each, the last one louder; the lights stay on until the ring of light, then fade as the next house comes; 8 sparks per room (≤ 40 on screen); a ring of light runs from the board's middle to its frame (300 ms); every ghost hops and turns to the camera (180 ms), then waves twice (2 × 200 ms); the solve-time digits tick in below the board (300 ms) (D73, D84) | rising arpeggio, last note loudest | 3 px kick on the last room | 35 ms | about 2.4 s: the next house slides in from 2,050 ms (350 ms); a tap skips from 600 ms on (earlier taps are ignored, so the last placement's tap never skips the payoff) |
+| Hint (D74, D86, D98) | first press, the reason in beats of 700 ms (§3.1): bands over the lines a step uses, the digit k beside a count's lines, the free cells it reasons about washed pale, a cross's see-through ghost and dotted rays while the room it would empty flashes the "seen" pose, hint dots on every cell a step removes; last, the target room pulses every 500 ms with the digit 1; the cell itself bears no mark (the room's other cells do); a wrong ghost trembles (4 × 30 ms) inside a dashed outline; the whole picture holds until the player's next move (a tap, a drag, an undo) or the second press, and a pause freezes it. Second press: the place or remove row | sparkle | none | none | one beat a step, then the picture until the next move |
+| Teaching demonstration (§3.3, D70, D83) | in houses 1, 2, 3, 5, 8 and 10, before input opens: the resident blinks awake and dotted trails run out along its row and column (900 ms; 600 ms in house 2); in house 1 a see-through ghost appears on (0,1) and both cover their eyes; in house 3 a see-through hand drags along the resident's row and marks pop in under it (700 ms); in house 5 each resident's trail stops at the bookshelf with a bump; in house 8 the lamp's light sweeps out (500 ms) and a see-through copy of the resident steps diagonally into it, on a cell no resident sees, and squints (400 ms); in house 10 the light stops at the bookshelf and a see-through copy behind it stays calm. Each ends on an 800 ms hold frame that shows the whole lesson, and plays again after 5 s without input until the house's first placement (house 3: its first mark), at most 3 times, never while a finger or a button is down or a hint's reason shows | none (Epic 4) | none | none | ≤ 2.3 s; a tap skips it, a first play never in its first 300 ms |
+| House solved | hit stop 50 ms; rooms light one by one in room-id order (reading order of each room's first cell, so the light sweeps down the house, D9) every `min(110, 900 / R)` ms, each brighter than the last (alpha 0.3 → 0.6) and each with a tick larger and higher than the last (scale 1 → 1.6, 4 px higher a room): the rising ticks, +1 semitone each, the last one louder; the lights stay on until the ring of light, then fade as the next house comes; 8 sparks per room (≤ 40 on screen); a ring of light runs from the board's middle to its frame (300 ms); every ghost hops and turns to the camera (180 ms), then waves twice (2 × 200 ms) (D73, D84) | rising arpeggio, last note loudest | 3 px kick on the last room | 35 ms | about 2.4 s of finale in all: the beat 2,050 ms, then the result card; a tap skips from 600 ms on (earlier taps are ignored, so the last placement's tap never skips the payoff); the next house slides in after the card (350 ms) |
+| Result card (D99) | the board stays, every ghost content; a card rises below the board (beside it in landscape) with a small overshoot (240 ms): the house number, the solve time ticking up from 0:00 (400 ms), a bulb with a tick when no hint was shown in the house, and a next arrow pulsing once every 1,000 ms; it holds until a tap: any tap, the arrow included, continues from 600 ms after the card began, and the tap that wakes the game after a pause never does | none (Epic 4) | none | none | holds; a tap continues from 600 ms |
 | Daily solved | the win above, then the streak flame grows and its digits flip; the share card button pops in (web portals only) | flame whoosh | none | 35 ms | +600 ms |
 | Trunk opens (every 3 houses) | the trunk shakes twice, the lid pops, a costume piece flies onto the ghosts | pop + chime | none | 15 ms | 700 ms, during the slide-in |
 | Tap a blocker or given | a 2 px nudge | none | none | none | 80 ms |
@@ -185,7 +201,7 @@ success gets the stack. Values are starting points behind named constants in
   repeats; no flash repeats faster than 3 times a second; haptics: failure never longer than the
   success tick (D73). On screen (e2e at 360 × 640; D84): a settle changes at least 3 times a
   conflict's board area and stays in motion at least twice as long; a solve's beat (before the
-  next house slides in) at least 10 times its area and 6 times as long. Time in motion is the
+  result card) at least 10 times its area and 6 times as long. Time in motion is the
   plan's frames every 50 ms, read off every drawn frame (each frame that differs from the one
   before counts until the next is drawn).
 - **Cascade per input:** a placement that ends a conflict releases the sigh cascade (k × 70 ms)
@@ -197,7 +213,8 @@ success gets the stack. Values are starting points behind named constants in
   (brief §6a). Checked on the Epic 4 capture and on Hasan's first session; flag any 10 s stretch
   without a settle on a recording of houses 4–11.
 - **Input stays open** during every cascade except the win (input locks; a tap skips the finale
-  from 600 ms on) and a teaching demonstration (§3.3; a tap skips it and is never a game tap).
+  from 600 ms on, and on the result card a tap continues from 600 ms after it began) and a teaching
+  demonstration (§3.3; a tap skips it and is never a game tap).
 - **Pause** freezes every tween, timer and sound, the finale's clock and a demonstration; a
   pending hit stop never resumes a paused game.
 - **iPhone:** no Vibration API on the web, so the hand-feel there is visual and audio only.
@@ -353,12 +370,18 @@ dev fakes (`?fakeads=1`, `?fakeads=fail`, `?adfast=1`).
 1. **Boot:** a dark house silhouette with a thin progress bar (no text, no title). The first
    house is interactive as soon as it is drawn: GameReady fires then (no title screen, brief §9).
 2. **Game:** the house; HUD buttons undo, hint, pause, trunk (with its 3-segment bar), and the
-   daily door after house 5. Digits only where the brief puts them (solve time at the win, streak,
-   the door's day). **Progress dots** (D75, graybox): one per room in room-id order, in the top
-   band (portrait and 1:1) or the HUD column (landscape), each a swatch of its room's floor and
-   wallpaper; a dot fills (full colour, a dark ring, a tick, a pop) when its room settles and
-   empties when it cools, so a full row is a solved house. The finale's solve time ticks in below
-   the board (portrait) or under the buttons (landscape), never over the dots (D85).
+   daily door after house 5. Digits only where the brief puts them (the solve time and the house
+   number on the result card, the hint's digit badges, D98, D99; streak, the door's day).
+   **Progress dots** (D75, graybox): one per room in room-id order, in the top band (portrait and 1:1) or the swatch column left of the board (landscape, D102), each a
+   swatch of its room's floor and wallpaper; a dot fills (full colour, a dark ring, a tick, a pop)
+   when its room settles and empties when it cools, so a full row is a solved house. Two rooms
+   whose wallpapers are of one family (stripes, hatch, dots, crosshatch, scales) differ by ΔE00 ≥
+   21 and deuteranope ΔE00 ≥ 12, so no two swatches read alike (D101). **The result card**
+   (D99): after the finale, below the board where the board leaves room (portrait), else in the
+   bottom band left of the buttons (1:1), and under the buttons in landscape; it shows the house
+   number, the solve time, a bulb with a tick when no hint was shown, and a next arrow, and never
+   meets the board, a swatch or a button. It is the Share pillar's future result card (Epic 5); on
+   YouTube it never shows a share action.
 3. **Pause sheet:** resume, sound, music (Epic 6).
 4. **Wardrobe:** the collected costume pieces (Epic 5).
 5. **Daily:** the same scene with the calendar mark; on a solve, the streak flame and, on web
@@ -371,8 +394,9 @@ dev fakes (`?fakeads=1`, `?fakeads=fail`, `?adfast=1`).
 Design size: short side 1080, long side follows the viewport aspect, clamped to [1080, 2400];
 `Scale.FIT`; `setGameSize` on every resize, then `layout()`. Portrait (primary): a top HUD band,
 the board square almost edge to edge (12 design px each side, D69), a bottom band with undo and
-hint. Landscape: the board left, the HUD as a column on the right. 1:1: thinner bands around a
-smaller board. No house is larger than 8 × 8, and its cells are ≥ 44 CSS px on a 360 × 640 phone
+hint. Landscape (D102): the board in the middle of the screen, the swatches in a column left of
+it, the buttons and the result card in a column right of it, each 200 design px wide and 32 from
+the board (the board shrinks where both do not fit). 1:1: thinner bands around a smaller board. No house is larger than 8 × 8, and its cells are ≥ 44 CSS px on a 360 × 640 phone
 in portrait (≥ 66 at 540 × 960) and ≥ 80 design px in every arrangement (D69; this replaces
 "≥ 80 design px at 9 × 9"); the hit area of a cell is the cell. Walls are 0.09 of a cell within
 12–18 design px. `computeLayout` is pure and tested over every design size in 40 px steps.

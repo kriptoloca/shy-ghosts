@@ -1,15 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { CELL_MIN, DESIGN_LONG_MAX, DESIGN_SHORT, DOT_R_MIN, WIN_DIGITS_SIZE } from '../src/config';
+import {
+  ARRANGE_RATIO,
+  CARD_FONT_MIN,
+  CARD_H,
+  CELL_MIN,
+  DESIGN_LONG_MAX,
+  DESIGN_SHORT,
+  DOT_R_MIN,
+  LANDSCAPE_SIDE,
+  SIDE_GAP,
+} from '../src/config';
 import { SIDE_MAX } from '../src/gen/params';
 import {
   BOOT_SIZES,
+  badgeFor,
   bootLayout,
+  cardBox,
+  cardSlots,
   cellAt,
   cellCenter,
   computeLayout,
   designSize,
   dotsLayout,
-  timeBox,
+  roomBadge,
   type Circle,
   type Rect,
   type Size,
@@ -249,7 +262,12 @@ describe('dotsLayout: one progress dot per room (D75)', () => {
         const dots = dotsLayout(l, rooms);
         const tag = `${String(size.width)}×${String(size.height)} ${String(rooms)} rooms`;
         if (dots.length !== rooms) wrong.push(`${tag}: ${String(dots.length)} dots`);
-        const band = l.top ?? l.hud;
+        // the top band, or in landscape the swatch column left of the board (D102)
+        const band = l.top ?? l.side;
+        if (!band) {
+          wrong.push(`${tag}: no band for the dots`);
+          continue;
+        }
         dots.forEach((d, k) => {
           if (!within(circleBox(d), band)) wrong.push(`${tag}: dot ${String(k)} outside its band`);
           if (overlaps(circleBox(d), l.board)) wrong.push(`${tag}: dot ${String(k)} on the board`);
@@ -282,22 +300,22 @@ describe('dotsLayout: one progress dot per room (D75)', () => {
   });
 });
 
-describe('timeBox: the solve time below the board (D85)', () => {
+describe('cardBox: the held result card (Gate B tune round 3 §3, D99; was the time box, D85)', () => {
   /**
-   * A solve time under ten minutes ("9:59") at about 0.6 em a character, in design px; a longer one
-   * is drawn smaller to fit the box (src/game/board.ts).
+   * The card's four things (the house number, the solve time, the no-hint badge, the next arrow)
+   * in slots; a solve time under ten minutes ("9:59") at about 0.6 em a character must fit its slot.
    */
-  const TIME_WIDTH = 4 * 0.6 * WIN_DIGITS_SIZE;
+  const TIME_EM = 4 * 0.6;
 
-  it('never meets a progress dot, the board or a button, and fits the digits, at every design size', () => {
+  it('never meets a progress dot, the board or a button, fits its slots, at every design size', () => {
     const wrong: string[] = [];
     for (const size of designSizes()) {
       for (const rooms of [2, 5, 8, 12]) {
         const l = computeLayout(size, SIDE_MAX);
-        const t = timeBox(l);
+        const t = cardBox(l);
         const tag = `${String(size.width)}×${String(size.height)} ${l.arrangement}`;
         if (!inside(t, size)) wrong.push(`${tag}: off screen`);
-        if (t.height < WIN_DIGITS_SIZE || t.width < TIME_WIDTH) wrong.push(`${tag}: too small`);
+        if (t.height < CARD_H) wrong.push(`${tag}: too low`);
         const pad = l.wall / 2;
         const board = {
           x: l.board.x - pad,
@@ -312,16 +330,176 @@ describe('timeBox: the solve time below the board (D85)', () => {
         for (const d of dotsLayout(l, rooms)) {
           if (overlaps(t, circleBox(d))) wrong.push(`${tag}: on a dot (${String(rooms)} rooms)`);
         }
+        const slots = cardSlots(t);
+        if (slots.cells.length !== 4) wrong.push(`${tag}: ${String(slots.cells.length)} slots`);
+        for (const c of slots.cells)
+          if (!within(c, t)) wrong.push(`${tag}: a slot outside the card`);
+        if (slots.font < CARD_FONT_MIN) wrong.push(`${tag}: font ${String(slots.font)}`);
+        const time = slots.cells[1] as Rect;
+        if (time.width < TIME_EM * slots.font || time.height < slots.font) {
+          wrong.push(`${tag}: the time does not fit its slot`);
+        }
       }
     }
     expect(wrong).toEqual([]);
   });
 
-  it('stands right below the board in portrait at 9:16', () => {
-    const l = computeLayout(designSize(360, 640), 6);
-    const t = timeBox(l);
+  it('stands right below the board in portrait at 9:16, its four things in one row', () => {
+    const l = computeLayout(designSize(360, 640), 7);
+    const t = cardBox(l);
     expect(t.y).toBeGreaterThan(l.board.y + l.board.height);
     expect(t.y + t.height).toBeLessThan(l.hud.y);
     expect(t.x + t.width / 2).toBeCloseTo(l.board.x + l.board.width / 2);
+    const slots = cardSlots(t);
+    expect([slots.cols, slots.rows]).toEqual([4, 1]);
+  });
+
+  it('readable on a 360 × 640 phone and at 1:1: its digits ≥ 16 CSS px', () => {
+    for (const [w, h] of [
+      [360, 640],
+      [600, 600],
+      [844, 390],
+    ] as const) {
+      const l = computeLayout(designSize(w, h), 7);
+      const css = Math.min(w, h) / DESIGN_SHORT;
+      expect(cardSlots(cardBox(l)).font * css).toBeGreaterThanOrEqual(16);
+    }
+  });
+});
+
+describe("the hint's digit badges (Gate B tune round 3 §2, D98)", () => {
+  it("a line from the edge: outside the board where the screen leaves room, never over its first cell's middle, a dot or a button", () => {
+    const wrong: string[] = [];
+    for (const size of designSizes()) {
+      for (const n of [5, 6, 7, 8]) {
+        const l = computeLayout(size, n);
+        const tag = `${String(size.width)}×${String(size.height)} n ${String(n)}`;
+        const dots = dotsLayout(l, n + 1);
+        for (let k = 0; k < n; k++) {
+          const row = badgeFor(l, 'row', k * n);
+          const col = badgeFor(l, 'col', k);
+          const first = { row: cellCenter(l, k * n), col: cellCenter(l, k) };
+          if (!inside(circleBox(row), size) || !inside(circleBox(col), size)) {
+            wrong.push(`${tag}: line ${String(k)} off screen`);
+          }
+          if (row.y !== first.row.y || col.x !== first.col.x) wrong.push(`${tag}: off its line`);
+          if (row.x + row.r > first.row.x || col.y + col.r > first.col.y) {
+            wrong.push(`${tag}: line ${String(k)} over its first cell's middle`);
+          }
+          for (const b of [row, col]) {
+            for (const d of dots)
+              if (overlaps(circleBox(b), circleBox(d))) wrong.push(`${tag}: on a dot`);
+            for (const btn of [l.buttons.undo, l.buttons.hint]) {
+              if (overlaps(circleBox(b), circleBox(btn))) wrong.push(`${tag}: on a button`);
+            }
+          }
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('outside the board left of a row and above a column when there is room (square 1:1, portrait 9:16 columns)', () => {
+    const sq = computeLayout(designSize(800, 800), 7);
+    const row = badgeFor(sq, 'row', 0);
+    expect(row.x + row.r).toBeLessThanOrEqual(sq.board.x - sq.wall / 2);
+    const tall = computeLayout(designSize(360, 640), 7);
+    const col = badgeFor(tall, 'col', 3);
+    expect(col.y + col.r).toBeLessThanOrEqual(tall.board.y - tall.wall / 2);
+    // portrait leaves no room left of the board: the badge sits on the board's edge, on screen
+    const r = badgeFor(tall, 'row', 7);
+    expect(r.x - r.r).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.r).toBeLessThanOrEqual(cellCenter(tall, 7).x);
+  });
+
+  it('a line split by an object: on the object before its first cell', () => {
+    const l = computeLayout(designSize(360, 640), 7);
+    expect(badgeFor(l, 'row', 7 + 3)).toMatchObject(cellCenter(l, 7 + 2));
+    expect(badgeFor(l, 'col', 2 * 7 + 4)).toMatchObject(cellCenter(l, 7 + 4));
+  });
+
+  it("the target room's digit 1: at the top left corner of its first cell, on screen", () => {
+    for (const size of designSizes()) {
+      const l = computeLayout(size, 7);
+      for (const first of [0, 3, 24, 48]) {
+        const b = roomBadge(l, first);
+        expect(inside(circleBox(b), size)).toBe(true);
+        const corner = {
+          x: l.board.x + (first % 7) * l.cell,
+          y: l.board.y + Math.floor(first / 7) * l.cell,
+        };
+        expect(Math.abs(b.x - corner.x)).toBeLessThanOrEqual(b.r + 8);
+        expect(Math.abs(b.y - corner.y)).toBeLessThanOrEqual(b.r + 8);
+      }
+    }
+  });
+});
+
+describe('landscape: the board in the middle (Gate B tune round 3 §6, D102)', () => {
+  /** Landscape design sizes, aspect 1.2 to 2.22. */
+  const sizes = designSizes(20).filter((z) => z.width >= z.height * ARRANGE_RATIO);
+
+  it('the board centred on the screen; the swatches in a column left of it, the buttons and the card right of it, SIDE_GAP apart; nothing overlaps', () => {
+    const wrong: string[] = [];
+    expect(sizes.length).toBeGreaterThan(50);
+    for (const size of sizes) {
+      for (const n of [5, 6, 7, 8]) {
+        const l = computeLayout(size, n);
+        const tag = `${String(size.width)}×${String(size.height)} n ${String(n)}`;
+        const cx = l.board.x + l.board.width / 2;
+        const cy = l.board.y + l.board.height / 2;
+        if (Math.abs(cx - size.width / 2) > 1 || Math.abs(cy - size.height / 2) > 1) {
+          wrong.push(`${tag}: the board off centre`);
+        }
+        const side = l.side;
+        if (!side) {
+          wrong.push(`${tag}: no swatch column`);
+          continue;
+        }
+        if (side.width !== LANDSCAPE_SIDE || l.hud.width !== LANDSCAPE_SIDE)
+          wrong.push(`${tag}: widths`);
+        if (Math.abs(l.board.x - (side.x + side.width) - SIDE_GAP) > 1e-6)
+          wrong.push(`${tag}: left gap`);
+        if (Math.abs(l.hud.x - (l.board.x + l.board.width) - SIDE_GAP) > 1e-6) {
+          wrong.push(`${tag}: right gap`);
+        }
+        const pad = l.wall / 2;
+        const board = {
+          x: l.board.x - pad,
+          y: l.board.y - pad,
+          width: l.board.width + 2 * pad,
+          height: l.board.height + 2 * pad,
+        };
+        const card = cardBox(l);
+        const buttons = [l.buttons.undo, l.buttons.hint].map(circleBox);
+        const dots = dotsLayout(l, 12).map(circleBox);
+        const parts: [string, Rect][] = [
+          ['board', board],
+          ['card', card],
+          ...buttons.map((b, k) => [`button ${String(k)}`, b] as [string, Rect]),
+          ...dots.map((d, k) => [`dot ${String(k)}`, d] as [string, Rect]),
+        ];
+        for (const [name, r] of parts)
+          if (!inside(r, size)) wrong.push(`${tag}: ${name} off screen`);
+        parts.forEach(([a, ra], i) => {
+          for (const [b, rb] of parts.slice(i + 1)) {
+            if (a.startsWith('dot') && b.startsWith('dot')) continue;
+            if (overlaps(ra, rb)) wrong.push(`${tag}: ${a} over ${b}`);
+          }
+        });
+        for (const d of dots) if (!within(d, side)) wrong.push(`${tag}: a dot outside its column`);
+        for (const b of [...buttons, card])
+          if (!within(b, l.hud)) wrong.push(`${tag}: outside the right column`);
+        if (n === 8 && l.cell < CELL_MIN) wrong.push(`${tag}: cell ${String(l.cell)}`);
+      }
+    }
+    expect(wrong.slice(0, 10)).toEqual([]);
+  });
+
+  it('at 844 × 390 the board stands in the middle with room on both sides', () => {
+    const l = computeLayout(designSize(844, 390), 7);
+    expect(l.arrangement).toBe('landscape');
+    expect(l.board.x + l.board.width / 2).toBeCloseTo(l.size.width / 2);
+    expect(l.side?.x ?? -1).toBeGreaterThanOrEqual(0);
   });
 });

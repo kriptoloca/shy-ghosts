@@ -10,9 +10,11 @@ import {
   WIN_SKIP_FROM_MS,
 } from '../../src/config';
 import type { DebugHouse } from '../../src/dev/debug';
-import { contrast, type Rgb } from '../support/colour';
+import { contrast, luminance, type Rgb } from '../support/colour';
 import { CANVAS, TEST, state, test, waitState } from './helpers';
 import {
+  center,
+  continueCard,
   corner,
   drag,
   emptyCells,
@@ -157,6 +159,130 @@ for (const id of [1, 17, 34]) {
   });
 }
 
+/**
+ * The lit stripes' outlines at device resolution (D101; round 3's code audit, ORTA 1): on the
+ * round-4 phone, 360 × 640 at 2×, both outlines of every stripe render, each as a run of at least
+ * OUTLINE_MIN_PX device pixels at ≥ OUTLINE_CONTRAST against its floor. Every lit empty cell of
+ * house 8 is scanned along two horizontal lines, a quarter and three quarters down the cell, where
+ * one stripe (x + y = ½, then 1½) crosses with its two outlines. The audit asked for two pixels at
+ * ≥ 4.5:1 an outline: out of reach, since the floors F3 and F5 pin an outline at 0.02 of the cell
+ * in x + y (1.7 device px; src/config.ts) and solid brown is 3.6:1 on the clay floors. The bound
+ * here tells the audited rendering apart (0.015 a side gave 2.2–2.4:1 on cells 3 and 19) from the
+ * widest the floors allow (2.7–4.3:1 on the darker floors, 6.1–8.0 on mint and rose).
+ */
+test.describe('the lit stripes at 2×', () => {
+  const DPR = 2;
+  test.use({ deviceScaleFactor: DPR });
+  const OUTLINE_MIN_PX = 1;
+  const OUTLINE_CONTRAST = 2.5;
+  /** A dark run starts at this contrast: the wallpaper's ink stays under it, an outline above. */
+  const DARK = 2;
+  /** The scan: this much of the cell either side of where the stripe's middle crosses the line. */
+  const SPAN = 0.15;
+
+  test('house 8 at 360 × 640 @2×: both outlines of every stripe render, ≥ 1 device px at ≥ 2.5:1 against the floor (D101)', async ({
+    page,
+  }) => {
+    await page.setViewportSize(PHONE);
+    await open(page, 'reset=1&house=8');
+    await settledEqualsRules(page);
+    // the frame at rest, before house 8's demonstration could play again after 5 s idle (D83)
+    const png = (await page.screenshot()).toString('base64');
+    const h = await house(page);
+    const m = model(h);
+    const cells = [...Array(m.n * m.n).keys()].filter(
+      (c) => m.lit[c] && !m.blocked[c] && !h.givens.includes(c),
+    );
+    expect(cells.length).toBeGreaterThanOrEqual(3);
+    const css = await page.evaluate(() => {
+      const c = document.querySelector('canvas');
+      return c ? c.getBoundingClientRect().width / c.width : 0;
+    });
+    const cell = ((await state(page))?.cell ?? 0) * css;
+    expect(cell).toBeGreaterThan(0);
+    const lines: { cell: number; at: string; y: number; x0: number; x1: number }[] = [];
+    for (const c of cells) {
+      const p = await center(page, c);
+      const left = p.x - cell / 2;
+      const top = p.y - cell / 2;
+      for (const f of [0.25, 0.75]) {
+        lines.push({
+          cell: c,
+          at: `${String(f)} down`,
+          y: top + f * cell,
+          x0: left + (f - SPAN) * cell,
+          x1: left + (f + SPAN) * cell,
+        });
+      }
+    }
+    const rows = await page.evaluate(
+      async ({ b64, lines, dpr }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width;
+        c.height = img.height;
+        // one readback a line (Chrome warns on many small ones, and the guard fails on a warning)
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error('no 2d context');
+        ctx.drawImage(img, 0, 0);
+        return lines.map((l) => {
+          const y = Math.round(l.y * dpr);
+          const x0 = Math.round(l.x0 * dpr);
+          const width = Math.round(l.x1 * dpr) - x0 + 1;
+          const d = ctx.getImageData(x0, y, width, 1).data;
+          const out: [number, number, number][] = [];
+          for (let q = 0; q < d.length; q += 4) out.push([d[q] ?? 0, d[q + 1] ?? 0, d[q + 2] ?? 0]);
+          return out;
+        });
+      },
+      { b64: png, lines, dpr: DPR },
+    );
+    const problems: string[] = [];
+    /** Each outline's strongest pixel, for the record. */
+    const peaks: number[] = [];
+    rows.forEach((px, k) => {
+      const line = lines[k] as (typeof lines)[number];
+      // the floor: the commonest colour on the line
+      const count = new Map<string, number>();
+      for (const p of px) count.set(p.join(), (count.get(p.join()) ?? 0) + 1);
+      const floorKey = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+      const floor = floorKey.split(',').map(Number) as unknown as Rgb;
+      const dark = (p: Rgb): boolean =>
+        luminance(p) < luminance(floor) && contrast(p, floor) >= DARK;
+      // the maximal runs of dark pixels: the stripe's two outlines
+      const runs: Rgb[][] = [];
+      let run: Rgb[] = [];
+      for (const p of px) {
+        if (dark(p)) run.push(p);
+        else if (run.length > 0) {
+          runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length > 0) runs.push(run);
+      const where = `cell ${String(line.cell)} ${line.at}`;
+      if (runs.length !== 2) problems.push(`${where}: ${String(runs.length)} dark runs, not 2`);
+      runs.forEach((r, i) => {
+        peaks.push(Math.max(...r.map((p) => contrast(p, floor))));
+        const strong = r.filter((p) => contrast(p, floor) >= OUTLINE_CONTRAST).length;
+        if (strong < OUTLINE_MIN_PX) {
+          const ratios = r.map((p) => contrast(p, floor).toFixed(1)).join(' ');
+          problems.push(
+            `${where}, outline ${String(i + 1)}: ${String(strong)} px ≥ ${String(OUTLINE_CONTRAST)}:1 (${ratios})`,
+          );
+        }
+      });
+    });
+    console.log(
+      `outlines on ${String(cells.length)} lit cells: the weakest peaks at ${Math.min(...peaks).toFixed(1)}:1, the strongest at ${Math.max(...peaks).toFixed(1)}:1`,
+    );
+    expect(problems).toEqual([]);
+    expect(rows).toHaveLength(2 * cells.length);
+  });
+});
+
 test('a tap 300 ms into the finale does not skip it; one at 700 ms does (D73)', async ({
   page,
 }) => {
@@ -173,6 +299,8 @@ test('a tap 300 ms into the finale does not skip it; one at 700 ms does (D73)', 
   expect(early?.beatMs ?? Infinity).toBeLessThan(WIN_BEAT_MS);
   await waitState(page, (s) => (s.beatMs ?? 0) >= LATE_MS, '700 ms into the finale');
   await page.mouse.click(away.x, away.y);
+  // the beat ends there and the held card rises (D99); a tap past its guard continues
+  await continueCard(page);
   const next = await waitState(page, (s) => s.shown === 13 && s.phase === 'play', 'house 13');
   // the second tap cut the beat short, after 700 ms; the first did not
   expect(next.finale?.beatMs ?? 0).toBeGreaterThanOrEqual(LATE_MS);

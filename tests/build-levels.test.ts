@@ -3,6 +3,7 @@ import { parseHouse, type HouseData } from '../src/core/house';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import {
   buildLevels,
+  choose,
   eachLightNeeded,
   gradeTurns,
   inShadow,
@@ -243,5 +244,19 @@ describe('round 2: the lesson tests', () => {
     expect(opensRight(free, hard)).toBe(false);
     expect(opensRight(free, { ...hard, opening: 'no-freebie' })).toBe(false);
     expect(opensRight(free, { ...hard, opening: null })).toBe(true);
+  });
+});
+
+describe('the ladder search (D95, D96)', () => {
+  it("a rung whose opener classes the two houses before have all used fails at once, not after the whole search (round 3's code audit, DÜŞÜK 5)", () => {
+    // house 16's rung allows a cross or a claim; both are taken by the houses before it
+    const band = bandFor(16);
+    expect(band.depth?.openers).toEqual(['cross', 'claim']);
+    const openers = { recent: ['cross', 'claim'], count2: false, pattern: null };
+    const t0 = performance.now();
+    expect(() =>
+      choose('house 16', 16, band, 'shy-ghosts/level/16', 0, [], null, openers, 0),
+    ).toThrow(/house 16: no opener class left/);
+    expect(performance.now() - t0).toBeLessThan(1000);
   });
 });

@@ -8,6 +8,7 @@ import {
   HATCH_SHARE,
   RING_DASH,
   RING_GAP,
+  SWATCH_CLOSE,
   S_PER_MIN,
 } from '../config';
 import type { HouseModel } from '../core/house';
@@ -34,9 +35,30 @@ export const PATTERNS = [
 ] as const;
 export type Pattern = (typeof PATTERNS)[number];
 
+/**
+ * Pattern families (D101): at swatch size two patterns of one family read alike, so their rooms'
+ * floors must stand apart (swatch rule S1, `SWATCH_CLOSE`).
+ */
+const FAMILY: Record<Pattern, string> = {
+  vstripes: 'stripes',
+  hstripes: 'stripes',
+  diagonal: 'hatch',
+  antidiagonal: 'hatch',
+  diamonds: 'dots',
+  checks: 'dots',
+  crosshatch: 'crosshatch',
+  scales: 'scales',
+};
+
 /** Lightness levels and hue families of the floors (COLOR_FLOORS[level][hue]). */
 export const LEVELS = COLOR_FLOORS.length;
 export const HUES = COLOR_FLOORS[0]?.length ?? 0;
+
+/** Two floors (level, hue) too close for patterns of one family (S1, D101). */
+function lookAlike(la: number, ha: number, lb: number, hb: number): boolean {
+  const mask = SWATCH_CLOSE[la * HUES + ha] ?? 0;
+  return ((mask >>> (lb * HUES + hb)) & 1) === 1;
+}
 
 export interface RoomStyle {
   /** The floor: COLOR_FLOORS[level][hue], unique in the house. */
@@ -103,7 +125,8 @@ function colouring(near: readonly Set<number>[], k: number, cap: number): number
  * degree; room r tries hue r · HUE_STEP and pattern r · PATTERN_STEP_OF_ROOM first. Neighbours
  * differ in hue and pattern. Up to HUES rooms no hue and no pattern repeats; above, a hue repeats
  * only on rooms that do not touch and lie two levels apart or more, a pattern only with another
- * hue, so no hue and pattern pair repeats. Null when there is no such choice.
+ * hue, so no hue and pattern pair repeats. Two rooms whose patterns are of one family never have
+ * look-alike floors (S1, D101). Null when there is no such choice.
  */
 function huesAndPatterns(
   near: readonly Set<number>[],
@@ -125,6 +148,13 @@ function huesAndPatterns(
       const apart = Math.abs((levels[y] as number) - (levels[x] as number)) >= 2;
       if (sameHue && (rooms <= HUES || !apart || samePattern)) return false;
       if (samePattern && (rooms <= PATTERNS.length || sameHue)) return false;
+    }
+    // S1 (D101): no two rooms of one pattern family with look-alike floors (neighbours included)
+    const family = FAMILY[PATTERNS[px] as Pattern];
+    for (let y = 0; y < rooms; y++) {
+      if (y === x || hue[y] === -1) continue;
+      if (FAMILY[PATTERNS[pattern[y] as number] as Pattern] !== family) continue;
+      if (lookAlike(levels[x] as number, hx, levels[y] as number, hue[y] as number)) return false;
     }
     return true;
   };
@@ -303,17 +333,23 @@ const HALF = 0.5;
 const STRIPE_LINES = [HALF, 1 + HALF];
 
 /**
- * The light hatch of a lit cell (D71), in cell units: two amber stripes along x + y = const (so a
- * lit row or column reads as one band of light from cell to cell), each with a brown edge on its
- * lower right side. The stripes cover HATCH_SHARE of the cell and the edges HATCH_EDGE_SHARE:
- * exactly, since the two bands' areas sum to their width in x + y.
+ * The light hatch of a lit cell (D71, D101), in cell units: two amber stripes along x + y = const
+ * (so a lit row or column reads as one band of light from cell to cell), each outlined in brown on
+ * both sides, so a stripe reads on the palest floors too (its amber is about 1.15:1 against them).
+ * The stripes cover HATCH_SHARE of the cell and the outlines HATCH_EDGE_SHARE in all: exactly,
+ * since two bands at x + y = ½ and 1½ cover together their width in x + y.
  */
 export function hatch(): { stripes: Polygon[]; edges: Polygon[] } {
   // a band d ± a around x + y = d covers a of the cell (for d = ½ and d = 1½ alike)
   const half = HATCH_SHARE / STRIPE_LINES.length;
+  // half the outline's area on each side of each stripe
+  const side = HATCH_EDGE_SHARE / STRIPE_LINES.length;
   return {
     stripes: STRIPE_LINES.map((d) => band(d - half, d + half)),
-    edges: STRIPE_LINES.map((d) => band(d + half, d + half + HATCH_EDGE_SHARE)),
+    edges: STRIPE_LINES.flatMap((d) => [
+      band(d - half - side, d - half),
+      band(d + half, d + half + side),
+    ]),
   };
 }
 
@@ -468,22 +504,6 @@ export function swatchMarks(
       };
     }
   }
-}
-
-/**
- * The cells the hint's reason keeps bright (D74): the segments and rooms the deduction uses and
- * the target room, ascending; every other cell goes dim for a moment.
- */
-export function brightCells(
-  h: HouseModel,
-  segments: readonly number[],
-  rooms: readonly number[],
-  room: number,
-): number[] {
-  const bright = new Set<number>();
-  for (const seg of segments) for (const c of h.segments[seg]?.cells ?? []) bright.add(c);
-  for (const r of [...rooms, room]) for (const c of h.roomCells[r] ?? []) bright.add(c);
-  return [...bright].sort((a, b) => a - b);
 }
 
 /** Dots from p toward q, `step` apart (the count rounded), both ends left out. */

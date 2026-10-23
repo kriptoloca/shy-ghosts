@@ -712,6 +712,90 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
   This answers the open question "pace or depth" with depth for houses 8–24. The exception to
   the fun gate's two-round rule (CLAUDE.md) is his; the main session recorded it from his answer.
 
+- **D92 The depth profile** (2026-10-23, tune round 3; docs/gate-b-round3.md §"Tune round 3"
+  §1.1–§1.2; `src/gen/depth.ts`). A house is played the way round 3's playtester did, the cheapest
+  deduction first (the autopilot, then the band's grader for one step when it stalls); each
+  placed ghost carries the hardest step since the ghost before (free, elim, claim, budget, cross,
+  count, chain; `DEPTH_RANK`). Cross, count and chain are the real insights; a stall is a gap only
+  one of them ends. Calibrated on the list round 3 played (`tests/fixtures/round3-houses.json`):
+  no house 4–24 stalled twice, every real insight came before the first ghost, and every tail was
+  4–9 ghosts placed without a thought.
+- **D93 The ladder's depth from house 8** (2026-10-23). Houses 9–24 stall at least twice, one real
+  step after two ghosts or more; at most 3 ghosts after the last real step and at most 3 in a row
+  without a thought; hard houses use two kinds of insight; houses 13, 14 and 17–22 stall three
+  times. House 8, the first lamp, is the one planned rest: it stalls once, after its first ghost.
+- **D94 The deepening search** (2026-10-23; `src/gen/deepen.ts`, GENERATOR.md §6.2). A ladder house
+  grows from a unique candidate by simulated annealing over its room borders (85 %) and its
+  shelves (15 %): 6,000 evaluations, the temperature falling from 8 to 0.5; every state graded in
+  canonical room ids; the score rewards the depth target and the d window; inside the walk a house
+  that meets the target is checked for its lesson and for idle objects, and a literally idle
+  object is dropped; a walk with no stall after 35 % of its evaluations stops. Deterministic for
+  its seed: the order of the random draws defines the houses.
+- **D95 The rungs 8–24** (2026-10-23; `src/gen/params.ts`). 7 × 7 from house 9; roles hard (9,
+  11–15, 17–22, 24), teach (8, 10, 16; their insights are crosses) and rest (23); lessons kept at 8
+  (light), 10 (shadow), 16 (three in a line), 17 (the lit line) and 18 (two lamps); 15 and 24 lean
+  hard houses, 23 a deep rest. A house opens unlike the two before it (`OPENER_MEMORY`, opener
+  classes `OPENERS_ANY` and `OPENERS_T2`; a lesson that fixes its opener keeps it), a two-room
+  count opens one house only, and no house repeats the pattern of real insights of the house
+  before.
+- **D96 The start table** (2026-10-23; `LADDER_STARTS`, `npm run levels:starts`). Searched from
+  candidate 0 the ladder takes about 16 minutes, over A8's budget; the build starts each ladder
+  house at the candidate the search found first (8: 157, 9: 256, 10: 256, …) and runs every check
+  as before. `npm run levels:starts` finds the table again after a pipeline change (with
+  `--progress=FILE` it resumes after an interruption). A start before the first qualifying
+  candidate only costs time, but a start past it would choose a later candidate and so another
+  house, and every house after it through the opener history: a stale table changes the list.
+  `tests/round3.test.ts` pins every house 8–24 to its start (the A9 re-run's DÜŞÜK). The build
+  takes 199 s.
+- **D97 A6 for houses 8–24** (2026-10-23, by D91's rule: the prototype's median + 5 s, rounded up to
+  5 s). 4–7: 90 (4–11's old ceiling); 8–11: 135; 12–14: 150; 15–16: 135; 17–19: 150; 20–22: 165;
+  23–24: 135; every house 1–7 ≤ 130, every house 8–16 ≤ 155. Measured: 70, 128, 144, 125.75, 141,
+  160, 128.5; maxima 117 and 146.5. Every other A6 ceiling is unchanged.
+- **D98 The hint's reason and recharge** (2026-10-23; `core/hint.ts`, `game/reason.ts`). The first
+  press plays the deduction in beats of 700 ms (a claim's band, a count's bands with the digit k
+  just outside the board, a cross's see-through ghost and its rays, a chain's ghosts; hint dots
+  on every cell a step removes) and ends on the target room pulsing with the digit 1; the picture
+  then holds. The cooldown starts when the hint is used (the second press, or the player's own
+  move that does what the reason shows); any other move that clears the reason gives the recharge
+  back (`HintClock.refund`). The hint still counts once, at the first press (D74). The save keeps
+  the recharge: save v2 adds `hintReadyIn` (0–90 s; a v1 save reads as ready); every flush writes
+  it, in every phase (a pause on the held card keeps it; round 3's code audit, DÜŞÜK 1), and a save
+  that lands after the boot hands its recharge to the running clock when longer
+  (`HintClock.adopt`; DÜŞÜK 2).
+- **D99 The held result card** (2026-10-23; `game/card.ts`). After the finale the board stays and a
+  card rises (240 ms, a small overshoot): the house number, the solve time ticking up over 400 ms,
+  a bulb with a tick when no hint was shown, a next arrow pulsing once a second. No auto-advance:
+  any tap continues from 600 ms after the card began; the tap that wakes the game after a pause
+  never does; a reload during the card opens the next house. The finale's solve time moved to the
+  card.
+- **D100 The relocation glide** (2026-10-23). 320 ms (was 220), ease in-out, the ghost leaning 8°
+  toward its way and straight on arrival; a see-through afterimage fades on the cell it left
+  (alpha 0.4 → 0, 300 ms). A relocation stays neutral: no success stack.
+- **D101 Swatch rule S1 and the lit stripes** (2026-10-23; `game/look.ts`). Two rooms of a house
+  whose patterns are of one family (stripes; hatch; dots; crosshatch; scales) differ by ΔE00 ≥ 21
+  and deuteranope ΔE00 ≥ 12 (`SWATCH_CLOSE`, derived from the floors). Each lit stripe is outlined
+  in brown on both sides. The stripes cover 0.075 of a lit cell and the four outlines 0.04 in all
+  (0.02 each in x + y: 1.7 device pixels on a 360 × 640 phone at 2×), the widest the floors allow
+  (round 3's code audit, ORTA 1; the grid in the coder's report): the settled ring must still read
+  on a lit floor (F3: 3.01 against the darkest; 2.98 with outlines of 0.045 in all, whatever the
+  stripes), and a lit cell must stay closest to its own room (F5: 0.70 here; 0.47 with stripes of
+  0.08, which round 2 drew; −1.83 with the plan's 0.10). Outlines of 0.03 a side, 431eb44's width
+  on its one side, need 0.06 in all and give F3 2.90–2.94 at any stripe share; the round-3 port's
+  0.015 a side rendered as a single device pixel at 3.0–6.5:1. `tests/e2e/round1.spec.ts` scans
+  house 8's lit cells at device resolution: both outlines of every stripe render at ≥ 2.5:1 (the
+  darker floors 2.7–4.3, mint and rose 6.1–8.0; 0.015 a side gave 2.2–2.4 on two cells). The
+  audit's two pixels at ≥ 4.5:1 an outline waits for Epic 4's palette: solid brown is 3.6:1 on
+  the clay floors. New check F5b: every stripe is bounded by an outline ≥ 3:1 on both sides, on
+  every floor. F1–F7 hold unchanged.
+- **D102 The centred landscape** (2026-10-23; `game/layout.ts`). In landscape the board stands in
+  the middle of the screen; the swatches in a column left of it, the buttons and the result card
+  in a column right of it, each 200 design px wide and 32 from the board; the board shrinks where
+  both do not fit (cells ≥ 80 design px at 8 × 8). The dots stand in two columns there.
+- **D103 House 8's demonstration** (2026-10-23; `lightDemoCell` in `core/house.ts`). The copy
+  stands on a lit cell that is not a solution cell and that no resident sees, diagonal to the
+  resident it steps out of where it can, so it shows the light alone (it only squints). The build
+  checks that house 8 has such a cell, after the deepening walk.
+
 ## Open questions (defaults in force)
 
 - **Answered 2026-10-22 (D91): depth for houses 8–24.** For Hasan (product direction): pace or

@@ -1,5 +1,8 @@
 import {
   ARRANGE_RATIO,
+  BADGE_GAP,
+  BADGE_R_MIN,
+  BADGE_SHARE,
   BOOT_BAR_GAP,
   BOOT_BAR_H,
   BOOT_BAR_W,
@@ -10,22 +13,30 @@ import {
   BUTTON_GAP,
   BUTTON_PAD,
   BUTTON_R_MAX,
+  CARD_EM,
+  CARD_FONT_MAX,
+  CARD_FONT_MIN,
+  CARD_H,
+  CARD_LINE,
+  CARD_PAD,
+  CARD_THINGS,
+  CARD_TIME_CHARS,
   DESIGN_LONG_MAX,
   DOT_COLUMNS,
   DOT_GAP,
   DOT_R_MAX,
   DESIGN_SHORT,
   GRID_LINE,
-  LANDSCAPE_COLUMN,
+  LANDSCAPE_SIDE,
   LAYOUT_MARGIN,
   PORTRAIT_SIDE_MARGIN,
   PORTRAIT_BOTTOM_BAND,
   PORTRAIT_TOP_BAND,
+  SIDE_GAP,
   SQUARE_BAND,
   WALL_MAX,
   WALL_MIN,
   WALL_SHARE,
-  WIN_DIGITS_SIZE,
 } from '../config';
 
 /**
@@ -137,7 +148,9 @@ export interface Layout {
   grid: number;
   /** The band above the board (kept for the later HUD), or null in landscape. */
   top: Rect | null;
-  /** Where the buttons sit: the bottom band, or the column on the right in landscape. */
+  /** Landscape: the swatch column left of the board (D102); null otherwise. */
+  side: Rect | null;
+  /** Where the buttons sit: the bottom band, or the column right of the board in landscape. */
   hud: Rect;
   buttons: { undo: Circle; hint: Circle };
 }
@@ -145,8 +158,9 @@ export interface Layout {
 /**
  * The Game screen for a design size and a house of side `n` (GDD §12). Portrait: a top band, the
  * board square almost edge to edge (12 design px each side, D69), a bottom band with undo and
- * hint. Landscape: the board on the left, the buttons in a column on the right. Square (1:1 and
- * near it): thinner bands around a smaller board. The board does not depend on `n`, so every
+ * hint. Landscape (D102): the board in the middle of the screen, the swatches in a column left of
+ * it and the buttons in a column right of it, LANDSCAPE_SIDE wide and SIDE_GAP away. Square (1:1
+ * and near it): thinner bands around a smaller board. The board does not depend on `n`, so every
  * house sits in the same frame; at 8 × 8, the largest house, cells stay ≥ 80 design px in every
  * arrangement and ≥ 44 CSS px on a 360 × 640 phone.
  */
@@ -157,13 +171,14 @@ export function computeLayout(size: Size, n: number): Layout {
     h >= w * ARRANGE_RATIO ? 'portrait' : w >= h * ARRANGE_RATIO ? 'landscape' : 'square';
   let board: Rect;
   let top: Rect | null = null;
+  let side: Rect | null = null;
   let hud: Rect;
   let buttons: { undo: Circle; hint: Circle };
   if (arrangement === 'landscape') {
-    hud = { x: w - LANDSCAPE_COLUMN, y: 0, width: LANDSCAPE_COLUMN, height: h };
-    const area = w - LANDSCAPE_COLUMN;
-    const side = Math.min(h - 2 * m, area - 2 * m);
-    board = { x: (area - side) / 2, y: (h - side) / 2, width: side, height: side };
+    const across = Math.min(h - 2 * m, w - 2 * (LANDSCAPE_SIDE + SIDE_GAP));
+    board = { x: (w - across) / 2, y: (h - across) / 2, width: across, height: across };
+    side = { x: board.x - SIDE_GAP - LANDSCAPE_SIDE, y: 0, width: LANDSCAPE_SIDE, height: h };
+    hud = { x: board.x + across + SIDE_GAP, y: 0, width: LANDSCAPE_SIDE, height: h };
     const r = Math.min(BUTTON_R_MAX, hud.width / 2 - BUTTON_PAD);
     const x = hud.x + hud.width / 2;
     const dy = r + BUTTON_GAP / 2;
@@ -196,6 +211,7 @@ export function computeLayout(size: Size, n: number): Layout {
     wall,
     grid: GRID_LINE,
     top,
+    side,
     hud,
     buttons,
   };
@@ -203,8 +219,8 @@ export function computeLayout(size: Size, n: number): Layout {
 
 /**
  * The progress dots (D75): one per room, in room-id order. Portrait and square: a row centred in
- * the top band. Landscape: rows of DOT_COLUMNS from the top of the HUD column, above the buttons.
- * The radius shrinks from DOT_R_MAX only when the row would not fit.
+ * the top band. Landscape: rows of DOT_COLUMNS from the top of the swatch column left of the board
+ * (D102). The radius shrinks from DOT_R_MAX only when the row would not fit.
  */
 export function dotsLayout(l: Layout, rooms: number): Circle[] {
   const m = LAYOUT_MARGIN;
@@ -216,39 +232,113 @@ export function dotsLayout(l: Layout, rooms: number): Circle[] {
     const y = l.top.y + l.top.height / 2;
     return Array.from({ length: rooms }, (_, k) => ({ x: x0 + k * step, y, r }));
   }
+  const column = l.side ?? l.hud;
   const cols = Math.min(DOT_COLUMNS, rooms);
-  const r = Math.min(DOT_R_MAX, ((l.hud.width - 2 * m) / cols - DOT_GAP) / 2);
+  const r = Math.min(DOT_R_MAX, ((column.width - 2 * m) / cols - DOT_GAP) / 2);
   const step = 2 * r + DOT_GAP;
-  const x0 = l.hud.x + l.hud.width / 2 - ((cols - 1) * step) / 2;
+  const x0 = column.x + column.width / 2 - ((cols - 1) * step) / 2;
   return Array.from({ length: rooms }, (_, k) => ({
     x: x0 + (k % cols) * step,
-    y: l.hud.y + m + r + Math.floor(k / cols) * step,
+    y: column.y + m + r + Math.floor(k / cols) * step,
     r,
   }));
 }
 
 /**
- * Where the solve time ticks in during the finale (D85), a box WIN_DIGITS_SIZE high: below the
- * board when the board leaves room under it (portrait); else in the bottom band left of the undo
- * button (square, and portrait near 1:1); in landscape, under the buttons in the HUD column. It
- * never meets a progress dot, the board or a button.
+ * Where the held result card stands (D99; it took over the solve time's box, D85): below the board
+ * when the board leaves room under it (portrait), CARD_H high and the board's width; else in the
+ * bottom band left of the undo button (square, and portrait near 1:1); in landscape, under the
+ * buttons in the HUD column. It never meets a progress dot, the board or a button.
  */
-export function timeBox(l: Layout): Rect {
+export function cardBox(l: Layout): Rect {
   const m = LAYOUT_MARGIN;
-  const h = WIN_DIGITS_SIZE;
   if (l.arrangement === 'landscape') {
     const top = l.buttons.hint.y + l.buttons.hint.r + BUTTON_PAD;
-    const bottom = l.size.height - m;
-    return { x: l.hud.x + m, y: (top + bottom - h) / 2, width: l.hud.width - 2 * m, height: h };
+    return { x: l.hud.x + m, y: top, width: l.hud.width - 2 * m, height: l.size.height - m - top };
   }
-  const below = l.board.y + l.board.height;
+  const below = l.board.y + l.board.height + l.wall / 2;
   const gap = l.hud.y - below;
-  if (gap >= h + 2 * BUTTON_PAD) {
-    return { x: l.board.x, y: below + (gap - h) / 2, width: l.board.width, height: h };
+  if (gap >= CARD_H + 2 * BUTTON_PAD) {
+    return { x: l.board.x, y: below + (gap - CARD_H) / 2, width: l.board.width, height: CARD_H };
   }
   const undo = l.buttons.undo;
   const right = undo.x - undo.r - BUTTON_PAD;
-  return { x: m, y: l.hud.y + (l.hud.height - h) / 2, width: right - 2 * m, height: h };
+  return { x: m, y: l.hud.y + (l.hud.height - CARD_H) / 2, width: right - 2 * m, height: CARD_H };
+}
+
+/** The card's grid: its four things (house, time, badge, arrow) in reading order, and the font. */
+export interface CardSlots {
+  cols: number;
+  rows: number;
+  font: number;
+  cells: Rect[];
+}
+
+/**
+ * The card's things in a row, two rows or a column (D99): the first grid, widest first, whose
+ * digits reach CARD_FONT_MIN; the solve time ("9:59") fits its slot.
+ */
+export function cardSlots(box: Rect): CardSlots {
+  let out: CardSlots | null = null;
+  for (const cols of [CARD_THINGS, CARD_THINGS / 2, 1]) {
+    const rows = CARD_THINGS / cols;
+    const w = (box.width - 2 * CARD_PAD) / cols;
+    const h = (box.height - 2 * CARD_PAD) / rows;
+    // whole design px, so the time's width never passes its slot by a rounding
+    const font = Math.floor(
+      Math.min(CARD_FONT_MAX, h * CARD_LINE, w / (CARD_TIME_CHARS * CARD_EM)),
+    );
+    const cells = Array.from({ length: CARD_THINGS }, (_, k) => ({
+      x: box.x + CARD_PAD + (k % cols) * w,
+      y: box.y + CARD_PAD + Math.floor(k / cols) * h,
+      width: w,
+      height: h,
+    }));
+    out = { cols, rows, font, cells };
+    if (font >= CARD_FONT_MIN) return out;
+  }
+  return out as CardSlots;
+}
+
+/** The radius of the hint's digit badges on a board with these cells (D98). */
+function badgeR(l: Layout): number {
+  return Math.max(BADGE_R_MIN, BADGE_SHARE * l.cell);
+}
+
+/** The lowest y a badge above the board may reach: below the progress dots of the top band. */
+function badgeTop(l: Layout): number {
+  if (!l.top) return 0;
+  const dots = dotsLayout(l, 1)[0];
+  return dots ? dots.y + DOT_R_MAX + BADGE_GAP : l.top.y + l.top.height;
+}
+
+/**
+ * Where the hint's digit badge of a line goes (D98): left of a row, above a column, BADGE_GAP
+ * outside the board where the screen leaves room; else on the board's edge, on screen, short of
+ * the first cell's middle. A line an object splits off has its badge on that object, the cell
+ * before `first` (its first cell).
+ */
+export function badgeFor(l: Layout, axis: 'row' | 'col', first: number): Circle {
+  const r = badgeR(l);
+  const at = cellCenter(l, first);
+  const pad = l.wall / 2;
+  if (axis === 'row') {
+    if (first % l.n > 0) return { ...cellCenter(l, first - 1), r };
+    // outside the board, but never into the swatch column (landscape) or off screen
+    const left = l.side ? l.side.x + l.side.width : 0;
+    return { x: Math.max(l.board.x - pad - BADGE_GAP - r, left + BADGE_GAP + r), y: at.y, r };
+  }
+  if (first >= l.n) return { ...cellCenter(l, first - l.n), r };
+  const y = Math.max(l.board.y - pad - BADGE_GAP - r, badgeTop(l) + r);
+  return { x: at.x, y: Math.min(y, at.y - r), r };
+}
+
+/** The target room's digit 1 (D98): at the top left corner of its first cell, kept on screen. */
+export function roomBadge(l: Layout, first: number): Circle {
+  const r = badgeR(l);
+  const x = l.board.x + (first % l.n) * l.cell;
+  const y = l.board.y + Math.floor(first / l.n) * l.cell;
+  return { x: Math.max(x, BADGE_GAP + r), y: Math.max(y, BADGE_GAP + r), r };
 }
 
 /** The cell under a point, or −1 outside the board. */

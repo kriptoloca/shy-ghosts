@@ -1,8 +1,11 @@
 import type Phaser from 'phaser';
 import {
+  BADGE_RIM_SHARE,
+  COLOR_BADGE,
   COLOR_BOOKS,
   COLOR_CAP,
   COLOR_CAP_TIP,
+  COLOR_DOT_RIM,
   COLOR_FURNITURE_EDGE,
   COLOR_GHOST_CALM,
   COLOR_GHOST_EYES,
@@ -320,14 +323,18 @@ export function makeGrayboxTextures(scene: Phaser.Scene): void {
   make(HAND_KEY, drawHand);
 }
 
-/** The texture of a mark on a floor of colour `floor`: a dark dot in a ring of that floor (D85). */
-export function markKey(scene: Phaser.Scene, floor: number): string {
-  const key = `gb-mark-${floor.toString(16)}`;
+/**
+ * The texture of a mark on a floor of colour `floor`: a dark dot in a ring of that floor (D85); with
+ * another `ink`, the hint's dot of the same shape (D98).
+ */
+export function markKey(scene: Phaser.Scene, floor: number, ink = COLOR_MARK): string {
+  const tag = ink === COLOR_MARK ? '' : `${ink.toString(16)}-`;
+  const key = `gb-mark-${tag}${floor.toString(16)}`;
   if (!scene.textures.exists(key)) {
     const g = scene.make.graphics({}, false);
     g.fillStyle(floor, 1);
     g.fillCircle(HALF, HALF, (MARK_SHARE + MARK_HALO) * S);
-    g.fillStyle(COLOR_MARK, 1);
+    g.fillStyle(ink, 1);
     g.fillCircle(HALF, HALF, MARK_SHARE * S);
     g.generateTexture(key, S, S);
     g.destroy();
@@ -358,6 +365,25 @@ export function dotKey(scene: Phaser.Scene, ink: number, floor: number): string 
 /** A dot's display size, halo included, in design px for a cell of `cell` px. */
 export function dotSize(cell: number): number {
   return 2 * (SEEN_DOT + DOT_HALO) * cell;
+}
+
+/**
+ * The hint's digit badge (D98): a dark disc that reads on every floor, in a light rim that reads on
+ * the dark page (the progress dots' rim), drawn into a texture and scaled.
+ */
+export const BADGE_KEY = 'gb-badge';
+export function badgeKey(scene: Phaser.Scene): string {
+  if (!scene.textures.exists(BADGE_KEY)) {
+    const g = scene.make.graphics({}, false);
+    const c = DOT_TEXTURE / 2;
+    g.fillStyle(COLOR_DOT_RIM, 1);
+    g.fillCircle(c, c, c);
+    g.fillStyle(COLOR_BADGE, 1);
+    g.fillCircle(c, c, c * (1 - BADGE_RIM_SHARE));
+    g.generateTexture(BADGE_KEY, DOT_TEXTURE, DOT_TEXTURE);
+    g.destroy();
+  }
+  return BADGE_KEY;
 }
 
 /** A small texture of one colour, scaled to any rectangle (the ring, the flashes, the veils). */

@@ -23,7 +23,8 @@
     "zip": "npm run build && node scripts/zip.mjs",
     "zip:only": "node scripts/zip.mjs",
     "levels": "node scripts/levels.mjs",
-    "levels:check": "node scripts/levels.mjs --check"
+    "levels:check": "node scripts/levels.mjs --check",
+    "levels:starts": "node scripts/levels.mjs --starts"
   },
   "dependencies": {
     "@playgama/bridge": "2.3.1",

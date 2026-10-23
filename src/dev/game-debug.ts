@@ -1,11 +1,13 @@
 import type { ButtonName } from '../game/hud';
 import { cellCenter, type Circle, type Size } from '../game/layout';
 import { progress } from '../game/progress';
-import type { HouseOnScreen, Phase } from '../game/scenes/GameScene';
+import type { CardShown } from '../game/card';
+import type { FinaleRecord, HouseOnScreen, Phase } from '../game/scenes/GameScene';
 import { BoardView } from '../game/view';
 import { visibleText } from '../game/visible';
 import { getPlatform, sentPlatformMessages, simulatePause } from '../platform/bridge';
 import type { HintExplain } from '../core/hint';
+import type { ReasonPicture } from '../game/reason';
 import {
   installDebug,
   type DebugHintReason,
@@ -35,11 +37,12 @@ export interface GameProbe {
   previous: () => HouseOnScreen | null;
   /** ms on the scene's clock since the house was solved, during its finale (D73). */
   beatMs: () => number | null;
-  /**
-   * The last finale: its beat on the scene's clock, the whole of it on the wall clock, the
-   * clock's step in the frame the slide began, and the ghosts still settling as the hop began.
-   */
-  finale: () => { beatMs: number; wallMs: number; stepMs: number; settling: number | null } | null;
+  /** The last finale (D73, D99): see `GhostDebugState.finale`. */
+  finale: () => FinaleRecord | null;
+  /** ms on the scene's clock since the result card began, while it holds (D99). */
+  cardMs: () => number | null;
+  /** What the result card shows, while it holds (D99). */
+  card: () => CardShown | null;
   /** Demonstrations started since the Game began, and the house on screen's (D70). */
   demos: () => number;
   shownAt: () => number | null;
@@ -49,6 +52,8 @@ export interface GameProbe {
   hintReason: () => HintExplain | null;
   /** The hint's reason is drawn on the board (D86). */
   reasonShown: () => boolean;
+  /** What the reason has drawn so far (D98). */
+  reasonPicture: () => ReasonPicture | null;
   /** The solve time below the board, or null (D85). */
   timeShown: () => string | null;
   /** The tween clock's scale: 0 while the platform pause holds and until its first step after. */
@@ -90,7 +95,11 @@ export function installGameDebug(p: GameProbe): void {
   const reason = (r: HintExplain | null): DebugHintReason | null => {
     if (!r) return null;
     if (r.kind === 'remove' || !playtest) return structuredClone(r);
-    return { kind: r.kind, room: r.room, segments: [...r.segments], rooms: [...r.rooms] };
+    const beats = r.beats.map((b) => {
+      if (b.kind !== 'target') return structuredClone(b);
+      return { kind: b.kind, room: b.room, dots: [...b.dots], lines: structuredClone(b.lines) };
+    });
+    return { kind: r.kind, room: r.room, segments: [...r.segments], rooms: [...r.rooms], beats };
   };
   const record = (h: HouseOnScreen): DebugRecord => {
     if (!h.log) throw new Error('the house log is kept in DEV builds only');
@@ -153,12 +162,15 @@ export function installGameDebug(p: GameProbe): void {
         effects: p.effects(),
         beatMs: p.beatMs(),
         finale: p.finale(),
+        cardMs: p.cardMs(),
+        card: p.card(),
         demos: p.demos(),
         shownAt: p.shownAt(),
         playAt: p.playAt(),
         demoSkipped: p.demoSkipped(),
         hintReason: reason(p.hintReason()),
         reasonShown: p.reasonShown(),
+        reasonPicture: p.reasonPicture(),
         timeShown: p.timeShown(),
         tweenScale: p.tweenScale(),
       };
@@ -178,12 +190,13 @@ export function installGameDebug(p: GameProbe): void {
     },
     solution: () => house().solution,
     house,
-    visible: () => visibleText(p.house().id, p.house().view),
+    visible: () => visibleText(p.house().id, p.house().view, p.reasonPicture(), p.card()),
     // the board as the rules hold it, in their words: never under ?playtest=1 (round 2's code
     // audit, DÜŞÜK 9)
     drawn: playtest ? hidden('drawn') : () => p.house().board.drawn(),
     rules: playtest ? hidden('rules') : () => BoardView.of(p.house().state).snapshot(),
     events: playtest ? hidden('events') : () => record(p.house()),
+    sprites: playtest ? hidden('sprites') : () => p.house().board.sprites(),
     previous: playtest
       ? hidden('previous')
       : () => {

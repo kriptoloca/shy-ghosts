@@ -72,8 +72,13 @@ export const PORTRAIT_TOP_BAND = 180;
 export const PORTRAIT_BOTTOM_BAND = 240;
 /** Square: a thin band above and below the board. */
 export const SQUARE_BAND = 132;
-/** Landscape: the HUD column on the right of the board. */
-export const LANDSCAPE_COLUMN = 240;
+/**
+ * Landscape (Gate B tune round 3 §6, D102): the board in the middle of the screen, the swatches in a
+ * column left of it, the buttons and the result card in a column right of it; each column
+ * LANDSCAPE_SIDE wide and SIDE_GAP from the board (the board shrinks where both do not fit).
+ */
+export const LANDSCAPE_SIDE = 200;
+export const SIDE_GAP = 32;
 /** HUD buttons: the largest radius, the space kept around one inside its band, the gap between two. */
 export const BUTTON_R_MAX = 84;
 export const BUTTON_PAD = 12;
@@ -88,7 +93,7 @@ export const CELL_MIN = 80;
 export const DOT_R_MAX = 30;
 export const DOT_R_MIN = 10;
 export const DOT_GAP = 14;
-export const DOT_COLUMNS = 3;
+export const DOT_COLUMNS = 2;
 /**
  * A filled dot's dark ring, as a share of its radius, and its pop (D84). A filled dot also keeps a
  * tick (D84): a check mark in the ring's teal, its stroke and its three points as shares of the
@@ -170,6 +175,21 @@ export const COLOR_FLOOR_INKS: readonly (readonly number[])[] = [
   [0xac7a72, 0x9d8261, 0x858962, 0x649078, 0x4d9099, 0x638aab, 0x8183aa, 0xa37b95],
   [0x926159, 0x836848, 0x6c7049, 0x48775f, 0x2c777f, 0x467292, 0x676a91, 0x89617c],
 ];
+/**
+ * Swatch rule S1 (Gate B tune round 3 §5, D101): at swatch size a room's pattern family dominates
+ * (stripes, hatch, dots, crosshatch, scales), so two rooms of a house whose patterns are of one
+ * family differ by ΔE00 ≥ SWATCH_DE_MIN and deuteranope ΔE00 ≥ SWATCH_DEUT_MIN. SWATCH_CLOSE holds
+ * the pairs that do not: for the floor at level × 8 + hue, a mask of the floors it is too close to
+ * (bit i: floor i). Derived from COLOR_FLOORS; tests/look.test.ts works it out again.
+ */
+export const SWATCH_DE_MIN = 21;
+export const SWATCH_DEUT_MIN = 12;
+export const SWATCH_CLOSE: readonly number[] = [
+  0x0083cfce, 0x00070f0d, 0x000e1f1b, 0x001c9fb7, 0x0038fcec, 0x0070f0d8, 0x00e0f1b1, 0x00c1f179,
+  0x838fcecf, 0x070f0d0f, 0x0e0f1b1f, 0x1c9fb71f, 0x38f8ecfc, 0x70f0d8f0, 0xe0f0b1f1, 0xc1d179f9,
+  0x8fce8f83, 0x070d0f07, 0x0f1b0f0e, 0x1f971f1c, 0xf8ecf838, 0xf0d07070, 0xf0b1f0e0, 0xd179f9c1,
+  0xce8f8300, 0x0d0f0700, 0x0b0f0e00, 0x971d1c00, 0xe8f83800, 0xd0707000, 0xb1f0e000, 0x79f1c100,
+];
 /** The thin grid inside a room: the wall colour, faint, so it never reads as a wall. */
 export const GRID_ALPHA = 0.18;
 /**
@@ -178,14 +198,19 @@ export const GRID_ALPHA = 0.18;
  */
 export const COLOR_SETTLED_RING = 0x004c45;
 /**
- * Lit cells: thin amber stripes outlined in brown over the unchanged wallpaper (the light cue, a
- * geometry of its own next to the settled ring). The stripes cover HATCH_SHARE of a lit cell's
- * area and their outline HATCH_EDGE_SHARE (≤ 12 % in all), so a lit cell keeps its room's colour.
+ * Lit cells: thin amber stripes outlined in brown on both sides (D101) over the unchanged wallpaper
+ * (the light cue, a geometry of its own next to the settled ring). The stripes cover HATCH_SHARE of
+ * a lit cell's area and their four outlines HATCH_EDGE_SHARE in all, each 0.02 of the cell in
+ * x + y. Two floors pin the shares (round 3's code audit, ORTA 1; the grid in docs/questions.md
+ * D101): the settled ring must still read on a lit floor (F3: 3.01 against the darkest, 2.98 with
+ * outlines of 0.045 in all, whatever the stripes), and a lit cell must stay closest to its own room
+ * (F5: 0.70 here, 0.47 with stripes of 0.08). Outlines of 0.03 a side, 431eb44's width, would need
+ * 0.06 in all and give F3 2.90–2.94; the plan's stripes of 0.10 give F5 −1.83.
  */
 export const COLOR_HATCH = 0xffca46;
 export const COLOR_HATCH_EDGE = 0x5a2b0e;
-export const HATCH_SHARE = 0.08;
-export const HATCH_EDGE_SHARE = 0.03;
+export const HATCH_SHARE = 0.075;
+export const HATCH_EDGE_SHARE = 0.04;
 /** Outlines on the floors: the bookshelf in the wall colour, the lamp in the hatch's brown. */
 export const COLOR_FURNITURE_EDGE = 0x1c2025;
 export const COLOR_LAMP_EDGE = 0x5a2b0e;
@@ -266,13 +291,43 @@ export const SEEN_DOT_STEP = 0.2;
 export const COLOR_GLANCE = 0x2e353d;
 export const GLANCE_ALPHA = 1;
 /**
- * The hint's reason (D74): every cell outside the lines and rooms that force the next ghost goes
- * dim under a veil of the page colour, so those stay bright; the target room pulses light; a wrong
- * ghost gets a dashed outline in the marks' ink (F6).
+ * The hint's reason (D74, D98): the target room pulses light; a wrong ghost gets a dashed outline
+ * in the marks' ink (F6).
  */
-export const HINT_VEIL_ALPHA = 0.45;
 export const COLOR_HINT_PULSE = 0xffffff;
 export const HINT_PULSE_ALPHA = 0.4;
+/**
+ * The reason in beats (Gate B tune round 3 §2, D98): one step of the deduction every
+ * REASON_BEAT_MS, then the whole picture holds. The cells a step removes get hint dots, the marks'
+ * dot in COLOR_HINT_DOT (deep blue, ≥ 3:1 on every floor in every view: F6); the lines it uses a
+ * pale band (COLOR_HINT_BAND at HINT_BAND_ALPHA, under the walls); the free cells it reasons about
+ * a pale wash (COLOR_HINT_PULSE at HINT_WASH_ALPHA). A cross or a chain shows a see-through ghost
+ * (HINT_COPY_ALPHA) whose dot comes at HINT_COPY_DOT_SHARE of its beat, as it fades; the room it
+ * would empty flashes the "seen" pose (HINT_FLASH_ALPHA at most).
+ */
+export const REASON_BEAT_MS = 700;
+export const COLOR_HINT_DOT = 0x0a2f7a;
+export const COLOR_HINT_BAND = 0xffffff;
+export const HINT_BAND_ALPHA = 0.3;
+export const HINT_WASH_ALPHA = 0.3;
+export const HINT_COPY_ALPHA = 0.55;
+export const HINT_COPY_DOT_SHARE = 0.6;
+export const HINT_FLASH_ALPHA = 0.6;
+/**
+ * Digit badges (D98; digits are allowed in play): a disc BADGE_SHARE of a cell in radius (at least
+ * BADGE_R_MIN design px) in COLOR_BADGE with the digit in COLOR_BADGE_DIGITS, BADGE_FONT_SHARE of
+ * the disc high. A line's badge stands BADGE_GAP outside the board, left of a row and above a
+ * column, where the screen leaves room, else on the board's edge; the target room's at the top
+ * left corner of its first cell.
+ */
+export const BADGE_SHARE = 0.2;
+export const BADGE_R_MIN = 22;
+export const BADGE_GAP = 8;
+export const COLOR_BADGE = 0x1c2025;
+/** The badge's light rim (the progress dots' rim colour), as a share of its radius. */
+export const BADGE_RIM_SHARE = 0.12;
+export const COLOR_BADGE_DIGITS = '#ffffff';
+export const BADGE_FONT_SHARE = 1.3;
 
 /** Ghosts: their size as a share of a cell, and the texture they are drawn into. */
 export const GHOST_SHARE = 0.86;
@@ -407,8 +462,15 @@ export const DIM_ALPHA = 0.6;
 /** Place: pop in, scale 0 → POP_SCALE → 1. */
 export const POP_MS = 120;
 export const POP_SCALE = 1.2;
-/** Relocate: glide to the new cell, ease in-out. */
-export const GLIDE_MS = 220;
+/**
+ * Relocate (Gate B tune round 3 §4, D100): glide to the new cell over GLIDE_MS, ease in-out,
+ * leaning GLIDE_LEAN_DEG toward its way and standing straight on arrival; a see-through
+ * afterimage stays on the cell it left, fading from AFTERIMAGE_ALPHA to 0 over AFTERIMAGE_MS.
+ */
+export const GLIDE_MS = 320;
+export const GLIDE_LEAN_DEG = 8;
+export const AFTERIMAGE_MS = 300;
+export const AFTERIMAGE_ALPHA = 0.4;
 /** Remove: float up and fade. */
 export const REMOVE_MS = 180;
 export const REMOVE_RISE = 20;
@@ -494,14 +556,64 @@ export const WIN_WAVES = 2;
 export const WIN_WAVE_MS = 200;
 /** A wave tips the ghost this many degrees each way. */
 export const WIN_WAVE_DEG = 12;
-export const WIN_DIGITS_MS = 300;
 export const WIN_BEAT_MS = 2050;
 export const WIN_SKIP_FROM_MS = 600;
 /**
- * The solve-time digits (m:ss), below the board (D85; they no longer cover the progress
- * swatches): their size in design px, font and colour, on the dark page.
+ * The held result card (Gate B tune round 3 §3, D99): after the finale the board stays and a card
+ * rises (RESULT_IN_MS, a small overshoot) below the board, or beside it in landscape, with the
+ * house number, the solve time ticking up over CARD_TIME_MS, a bulb with a tick when no hint was
+ * shown, and a next arrow pulsing once every CARD_PULSE_MS (to CARD_PULSE_SCALE). A tap continues
+ * from RESULT_GUARD_MS after the card starts. The card is CARD_H design px high below the board
+ * (CARD_PAD inside); its four things share a row, two rows or a column, whichever gives the
+ * largest digits, never under CARD_FONT_MIN nor over CARD_FONT_MAX design px (a digit about
+ * CARD_EM of its size wide, a line CARD_LINE of its slot high). It rises from CARD_RISE_PX below.
  */
-export const WIN_DIGITS_SIZE = 72;
+export const RESULT_IN_MS = 240;
+export const RESULT_GUARD_MS = 600;
+export const CARD_TIME_MS = 400;
+export const CARD_PULSE_MS = 1000;
+export const CARD_PULSE_SCALE = 1.15;
+export const CARD_H = 108;
+export const CARD_PAD = 12;
+export const CARD_FONT_MIN = 32;
+export const CARD_FONT_MAX = 72;
+export const CARD_EM = 0.6;
+export const CARD_LINE = 0.8;
+/** The card's things (house number, solve time, badge, arrow); the widest time kept ("9:59"). */
+export const CARD_THINGS = 4;
+export const CARD_TIME_CHARS = 4;
+/** CSS colours ('#rrggbb') are read back as numbers for drawn shapes, in this radix. */
+export const HEX_RADIX = 16;
+export const CARD_RISE_PX = 40;
+/**
+ * The card: a slate panel with the progress dots' light rim (CARD_RIM design px) and round corners
+ * (CARD_ICON.corner of its shorter side); its digits, bulb and arrow in the finale's warm digit
+ * colour, the bulb's tick in a light teal (≥ 3:1 on the panel, tests/contrast.test.ts). The icons
+ * in shares of their square: the bulb's ring and base, the line width, the tick's corner, middle
+ * and end, the arrow's length, head and shaft.
+ */
+export const COLOR_CARD = 0x2a3142;
+export const COLOR_CARD_TICK = 0x8fd8c8;
+export const CARD_RIM = 4;
+export const CARD_ICON = {
+  corner: 0.25,
+  bulbR: 0.24,
+  bulbY: -0.1,
+  baseW: 0.2,
+  baseH: 0.12,
+  baseY: 0.18,
+  stroke: 0.07,
+  tickX: 0.18,
+  tickY: 0.18,
+  tickR: 0.2,
+  tickMidX: 0.3,
+  tickMidY: 0.6,
+  tickEndY: 0.7,
+  arrowW: 0.62,
+  arrowH: 0.5,
+  shaft: 0.16,
+} as const;
+/** The digits of the result card and the hint's badges: their font, and the card's warm colour. */
 export const WIN_DIGITS_FONT = 'sans-serif';
 export const COLOR_WIN_DIGITS = '#ffe3a0';
 /** The next house slides in. */

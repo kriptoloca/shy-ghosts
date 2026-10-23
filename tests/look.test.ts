@@ -3,17 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { parseHouse, type HouseModel } from '../src/core/house';
 import { TUTORIAL_HOUSES } from '../src/data/tutorial';
 import {
+  COLOR_FLOORS,
   DOT_PATTERN_MARK,
   HATCH_EDGE_SHARE,
   HATCH_SHARE,
   RING_DASH,
   RING_GAP,
+  SWATCH_CLOSE,
+  SWATCH_DE_MIN,
+  SWATCH_DEUT_MIN,
 } from '../src/config';
 import {
   HUES,
   LEVELS,
   PATTERNS,
-  brightCells,
   clipPolygon,
   TickingTime,
   clockText,
@@ -26,9 +29,11 @@ import {
   roomStyles,
   swatchMarks,
   wallRuns,
+  type Pattern,
   type Polygon,
 } from '../src/game/look';
 import type { PlayHouse } from '../src/gen/record';
+import { deltaE00, deuteranope, rgb } from './support/colour';
 
 /**
  * The graybox look (TASKS.md Epic 3; CLAUDE.md, Rendering; D71, D85): every room of a house has a
@@ -136,6 +141,61 @@ describe('roomStyles (D85)', () => {
   });
 });
 
+/**
+ * Swatch rule S1 (Gate B tune round 3 §5, D101): at swatch size the pattern family dominates, so two
+ * rooms of a house whose patterns are of one family (stripes: vertical and horizontal; hatch:
+ * diagonal and antidiagonal; dots: diamonds and checks; crosshatch; scales) differ by ΔE00 ≥ 21
+ * and deuteranope ΔE00 ≥ 12 (round 3's house 34 had clay and sand, both vertical stripes, 12.8).
+ */
+describe('swatch rule S1 (D101)', () => {
+  const FAMILY: Record<Pattern, string> = {
+    vstripes: 'stripes',
+    hstripes: 'stripes',
+    diagonal: 'hatch',
+    antidiagonal: 'hatch',
+    diamonds: 'dots',
+    checks: 'dots',
+    crosshatch: 'crosshatch',
+    scales: 'scales',
+  };
+  const FLOORS = COLOR_FLOORS.flat().map(rgb);
+  const close = (a: number, b: number): boolean =>
+    deltaE00(FLOORS[a] as never, FLOORS[b] as never) < SWATCH_DE_MIN ||
+    deltaE00(deuteranope(FLOORS[a] as never), deuteranope(FLOORS[b] as never)) < SWATCH_DEUT_MIN;
+
+  it('SWATCH_CLOSE holds exactly the floor pairs closer than ΔE00 21 or deuteranope ΔE00 12', () => {
+    expect([SWATCH_DE_MIN, SWATCH_DEUT_MIN]).toEqual([21, 12]);
+    const masks = FLOORS.map((_, a) =>
+      FLOORS.reduce<number>((m, __, b) => (b !== a && close(a, b) ? (m | (1 << b)) >>> 0 : m), 0),
+    );
+    expect([...SWATCH_CLOSE]).toEqual(masks);
+  });
+
+  it('two rooms whose patterns are of one family differ by ΔE00 ≥ 21 and deuteranope ΔE00 ≥ 12, on every house', () => {
+    const wrong: string[] = [];
+    HOUSES.forEach((h, k) => {
+      const styles = roomStyles(h);
+      styles.forEach((a, i) => {
+        styles.forEach((b, j) => {
+          if (j <= i || FAMILY[a.pattern] !== FAMILY[b.pattern]) return;
+          if (close(a.level * HUES + a.hue, b.level * HUES + b.hue)) {
+            // HOUSES: the tutorial, then houses 1–1000, then the dailies
+            const name =
+              k < 3
+                ? `tutorial ${String(k + 1)}`
+                : k < 1003
+                  ? `house ${String(k - 2)}`
+                  : `daily ${String(k - 1002)}`;
+            wrong.push(`${name}: rooms ${String(i)} and ${String(j)}`);
+          }
+        });
+      });
+    });
+    expect(wrong.slice(0, 10)).toEqual([]);
+    expect(HOUSES).toHaveLength(1795);
+  });
+});
+
 describe('wallRuns', () => {
   it('draw exactly the edges between two rooms and the outer border, as straight runs', () => {
     for (const h of HOUSES.slice(0, 300)) {
@@ -169,7 +229,7 @@ describe('wallRuns', () => {
 });
 
 describe('the light hatch and the settled ring (D71)', () => {
-  it('the hatch covers HATCH_SHARE of a lit cell with stripes and HATCH_EDGE_SHARE with their edge', () => {
+  it('the hatch covers HATCH_SHARE of a lit cell with stripes and HATCH_EDGE_SHARE with their edges', () => {
     const h = hatch();
     const area = (ps: readonly Polygon[]): number => ps.reduce((a, p) => a + polygonArea(p), 0);
     expect(area(h.stripes)).toBeCloseTo(HATCH_SHARE, 9);
@@ -287,19 +347,6 @@ describe("the progress dots, the hint's reason, dotted trails and dashes (D74, D
       }
       expect(polygonArea(c)).toBeLessThan(polygonArea(p));
     }
-  });
-
-  it("the hint's reason keeps bright the segments, the rooms and the target room, nothing else", () => {
-    const h = HOUSES[TUTORIAL_HOUSES.length + 11] as HouseModel; // house 12
-    const seg = h.rowSeg[0] as number;
-    const bright = brightCells(h, [seg], [1], 2);
-    const want = new Set([
-      ...(h.segments[seg]?.cells ?? []),
-      ...(h.roomCells[1] ?? []),
-      ...(h.roomCells[2] ?? []),
-    ]);
-    expect(bright).toEqual([...want].sort((a, b) => a - b));
-    expect(brightCells(h, [], [], 0)).toEqual([...(h.roomCells[0] ?? [])].sort((a, b) => a - b));
   });
 
   it('dotsBetween spaces the dots evenly and leaves both ends out', () => {

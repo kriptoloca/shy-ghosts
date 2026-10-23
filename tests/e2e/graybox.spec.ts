@@ -1,8 +1,9 @@
 import { expect } from '@playwright/test';
-import { WIN_SKIP_FROM_MS } from '../../src/config';
+import { RESULT_GUARD_MS, WIN_SKIP_FROM_MS } from '../../src/config';
 import { RULE_WORDS } from '../support/rule-words';
 import { CANVAS, TEST, TOUCHCANCEL_REPORT, platformPause, state, test, waitState } from './helpers';
 import {
+  continueCard,
   button,
   center,
   corner,
@@ -45,7 +46,8 @@ test('load → house 1 interactive within 3 s → houses 1–3 by real taps in u
   const t0 = Date.now();
   for (const id of [1, 2, 3]) {
     expect(await solve(page)).toBe(id);
-    // the win beat, then the next house slides in by itself
+    // the win beat, the held result card, a tap: the next house slides in (D99)
+    await continueCard(page);
     await waitState(
       page,
       (s) => s.shown === id + 1 && s.phase === 'play',
@@ -226,6 +228,11 @@ test('a press held on the hint from the win beat does nothing in the next house 
   expect((await state(page))?.phase).toBe('win');
   await page.mouse.move(hint.x, hint.y);
   await page.mouse.down(); // early in the finale: ignored, and the press is dropped
+  await page.mouse.up();
+  // the held card (D99): a press on the hint past its guard continues to house 2 and is dropped
+  // too, though it comes up only in house 2
+  await waitState(page, (s) => s.phase === 'card' && (s.cardMs ?? -1) >= RESULT_GUARD_MS, 'card');
+  await page.mouse.down();
   await waitState(page, (s) => s.shown === 2 && s.phase === 'play', 'house 2');
   await page.mouse.up();
   await frames(page, 3);
@@ -243,9 +250,11 @@ test('a tap in the beat skips it; a tap on the hint in the slide only ends the s
   const away = await corner(page);
   await solve(page);
   expect((await state(page))?.phase).toBe('win');
-  // from 600 ms into the finale a tap skips it (D73)
+  // from 600 ms into the finale a tap skips it (D73): the held card rises at once (D99)
   await waitState(page, (s) => (s.beatMs ?? 0) >= WIN_SKIP_FROM_MS, 'the finale skippable');
-  await page.mouse.click(away.x, away.y); // the finale is skipped: the slide starts
+  await page.mouse.click(away.x, away.y);
+  await waitState(page, (s) => s.phase === 'card' && (s.cardMs ?? -1) >= RESULT_GUARD_MS, 'card');
+  await page.mouse.click(away.x, away.y); // the card continues: the slide starts
   await page.mouse.click(hint.x, hint.y); // the slide ends, and nothing else happens
   await waitState(page, (s) => s.shown === 2 && s.phase === 'play', 'house 2');
   await frames(page, 3);
@@ -269,6 +278,7 @@ for (const [name, viewport, arrangement] of [
     expect(s?.arrangement).toBe(arrangement);
     expect(s?.cell ?? 0).toBeGreaterThanOrEqual(80);
     await solve(page);
+    await continueCard(page);
     await waitState(page, (x) => x.shown === 10 && x.phase === 'play', 'house 10');
     await finishedReplays(page, 9);
     await settledEqualsRules(page);
@@ -302,17 +312,18 @@ test('?playtest=1 hides the solution from the hooks; visible() names no rule', a
       'taps',
     ].sort(),
   );
-  expect(got.text).toMatch(/^house 17 · 6 × 6/);
+  // 7 × 7 since tune round 3 (D95)
+  expect(got.text).toMatch(/^house 17 · 7 × 7/);
   // house 17 has a lamp: the floor shows its sun icon and its warm wash, in words of what is drawn
   const lines = got.text.split('\n');
   const floor = lines.findIndex((l) => l.startsWith('floor ('));
-  const rows = lines.slice(floor + 1, floor + 7).join('\n');
+  const rows = lines.slice(floor + 1, floor + 8).join('\n');
   expect(rows).toContain('@');
   expect(rows).toContain('~');
   expect(got.text.match(RULE_WORDS)?.[0] ?? null).toBeNull();
 });
 
-test('a house restored already solved plays its win and moves on by itself (D49)', async ({
+test('a house restored already solved plays its win and holds its card; a tap moves on (D49, D99)', async ({
   page,
 }) => {
   // house 2 (ABB / ABB / CCC, the resident at (0,1)) saved with its two last ghosts in place:
@@ -333,6 +344,9 @@ test('a house restored already solved plays its win and moves on by itself (D49)
     );
   });
   await page.goto(`${TEST}?${CANVAS.slice(1)}`, { waitUntil: 'load' });
+  const card = await waitState(page, (x) => x.phase === 'card', 'the card of house 2');
+  expect([card.shown, card.card?.house]).toEqual([2, 2]);
+  await continueCard(page);
   const s = await waitState(page, (x) => x.shown === 3 && x.phase === 'play', 'house 3');
   expect(s.house).toBe(3);
   await finishedReplays(page, 2);
@@ -414,6 +428,7 @@ test('a new screen size during the win beat lays it out again; the beat plays on
   expect([s.phase, s.shown]).toEqual(['win', 9]);
   await frames(page, 6);
   expect((await state(page))?.phase).toBe('win');
+  await continueCard(page);
   const next = await waitState(page, (x) => x.shown === 10 && x.phase === 'play', 'house 10');
   expect(next.arrangement).toBe('square');
   await finishedReplays(page, 9);
