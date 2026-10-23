@@ -4,14 +4,14 @@ Single source of truth for "where did we leave off". Read first at the start of 
 update at the end of every epic.
 
 ## Status
-**Gate B round 4 played on `363ccbb` (2026-10-23, docs/gate-b-round4.md): B1 and B3–B7 pass,
-verdict YES (Flow 4, Fair 4), interest median 4 over houses 4–20 with 14 of 17 at 4 or more;
-B2 reads 20 of 23 houses cell for cell (three shelf cells put in the neighbouring room; a shelf
-cell holds nothing) against its 100 %. Whether Gate B passes on this is Hasan's decision; the
-main session moves no bar.** Gate B tune round 3, the last (D91–D103), is built, audited and
-pushed: Gate A A1–A9 passed on the auditor's checker with only A6's ceilings for houses 8–24
-raised (D97). · Epics 0–3 and tune rounds 1–3 done and pushed (`kriptoloca/shy-ghosts`, `main`
-at `363ccbb feat(gate-b): tune round 3`) · Last update: 2026-10-23 · Branch: `main`
+**Gate B passed (D104, 2026-10-23): the fun gate is closed; Epic 4 (feel, face, sound) may
+start.** Round 4 on `363ccbb` (docs/gate-b-round4.md): B1 and B3–B7 passed, verdict YES (Flow 4,
+Fair 4), interest median 4 over houses 4–20 with 14 of 17 at 4 or more; B2 read 20 of 23 houses
+cell for cell, the three misses on shelf cells (which hold nothing); Hasan decided the gate
+passes on that ("Geçti say"). Gate A passed A1–A9 (D82, D97 amendments approved by Hasan). ·
+Epics 0–3 and tune rounds 1–3 done and pushed (`kriptoloca/shy-ghosts`, `main`) · Hasan gets the
+graybox screenshots, then the `/test/` link once GitHub Pages is on · Last update: 2026-10-23 ·
+Branch: `main`
 Munch Pixels is paused (munch-pixels `docs/PROGRESS.md`, 2026-10-21) after its playtests showed the
 core loop had no real decisions; this plan builds that lesson in as the fun gate (CLAUDE.md,
 docs/questions.md D1).
@@ -1005,18 +1005,16 @@ fix, or a scratch mutant); no threshold, floor or test tolerance moved:
       free to rise (set by D97), a new blind playtest after it, a fail ends Shy Ghosts.
 
 ## Next steps (in order)
-1. **Hasan decides on Gate B** (docs/gate-b-round4.md): pass on six bars with B2's three shelf
-   cells read as outside the bar's purpose, or not. Nothing is shown and no Epic 4 work starts
-   before his answer (CLAUDE.md, the fun gate).
-2. If Gate B passes: graybox screenshots to Hasan first (houses 1, 4, 9, 12, 17, 20, 34 at 9:16,
-   one line each), then the `/test/` link (GitHub Pages is still off: the Pages workflow's
-   `configure-pages` cannot switch it on with the workflow's token, so every run so far skipped
-   the deploy; Hasan's step above); Epic 4 (feel, face and sound) starts. Its feel constants
-   move from `src/config.ts` ("Graybox motion") to `src/game/feel.ts`; it decides whether the two
-   graybox aids of D59 (the lasting sight line, the glance dots) stay, and takes the palest rose
-   and sky down a step (the design critique above); round 3's critique adds the card at 1:1 (the
-   arrow's slot, the buttons dimmed while it holds), the lit stripes over a wallpaper on the same
-   diagonal, and the room badge "1" on a wall; round 4's playtest adds the shelf cell's floor
-   band, house 3's hand and a visible refusal, the cooldown shake, the conflict's weight against
-   the settle, the swatch that reads as a face.
+1. The `/test/` link to Hasan once GitHub Pages is on (Settings → Pages → Source: "GitHub
+   Actions"; the Pages workflow's `configure-pages` cannot switch it on with the workflow's
+   token, so every run so far skipped the deploy); then re-run the Pages workflow and check
+   `e2e-live`.
+2. **Epic 4 (feel, face and sound)**, TASKS.md: its feel constants move from `src/config.ts`
+   ("Graybox motion") to `src/game/feel.ts`; it decides whether the two graybox aids of D59 (the
+   lasting sight line, the glance dots) stay, and takes the palest rose and sky down a step (the
+   design critique); round 3's critique adds the card at 1:1 (the arrow's slot, the buttons dimmed
+   while it holds), the lit stripes over a wallpaper on the same diagonal, and the room badge "1"
+   on a wall; round 4's playtest adds the shelf cell's floor band (D104), house 3's hand and a
+   visible refusal on an ignored tap, the cooldown shake, the conflict's weight against the
+   settle (GDD §3a), the swatch that reads as a face and nine swatches at 360 px.
 3. Open: arrow keys and Enter on desktop (GDD §3.1, optional, D60).

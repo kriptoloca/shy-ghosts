@@ -201,12 +201,12 @@ to what the graybox needs (D2).
   - [x] `code-review` and the adversarial audit; the findings fixed red-first (D63–D66):
         `npm test` (293), `npm run e2e` (22 graybox + 4 smoke) green
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
-  - [ ] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
+  - [x] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
         docs/gate-b-round3.md); Hasan approved a third tune round, the last (D91: depth from
-        house 8, A6's ceilings for 8–24 may rise); **round 4** (docs/gate-b-round4.md): B1 and
-        B3–B7 pass, verdict YES, interest median 4; B2 reads 20 of 23 houses cell for cell (three
-        shelf cells put in the neighbouring room) against its 100 %: whether the gate passes is
-        Hasan's decision
+        house 8, A6's ceilings for 8–24 may rise); **round 4 passed by Hasan's decision, D104**
+        (docs/gate-b-round4.md): B1 and B3–B7 pass, verdict YES, interest median 4; B2 read 20
+        of 23 houses cell for cell (three shelf cells put in the neighbouring room, which hold
+        nothing) and Hasan counted the bar met
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.

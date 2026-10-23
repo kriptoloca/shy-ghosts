@@ -795,6 +795,13 @@ B1–B7 are unchanged; what the build measured is in docs/PROGRESS.md, "Gate B t
   stands on a lit cell that is not a solution cell and that no resident sees, diagonal to the
   resident it steps out of where it can, so it shows the light alone (it only squints). The build
   checks that house 8 has such a cell, after the deepening walk.
+- **D104 Gate B passed on round 4, by Hasan's decision** (2026-10-23; docs/gate-b-round4.md).
+  Six bars passed and the verdict was YES; B2 read 20 of 23 houses cell for cell, the three
+  misses being shelf cells put in the neighbouring room (a shelf cell holds nothing, so no rule
+  or solution depends on its room). Asked whether Gate B passes on this, Hasan chose "Geçti say":
+  B2's purpose (the screen shows the rules) is met, and the shelf cell's floor band goes to Epic
+  4. The main session recorded it from his answer; no bar's text changes. The fun gate is closed:
+  Epic 4 may start; Hasan gets the graybox screenshots first, then the `/test/` link.
 
 ## Open questions (defaults in force)
 
