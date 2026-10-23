@@ -997,18 +997,17 @@ fix, or a scratch mutant); no threshold, floor or test tolerance moved:
 - [x] Create the GitHub repository `kriptoloca/shy-ghosts` and give the Claude GitHub App access
       (done 2026-10-21; `main` pushed through `fa66f51`; CI and the Pages workflow ran green on
       Epic 0, per the main session).
-- [ ] Switch on GitHub Pages once the first build exists (after Epic 0 is pushed): Settings →
-      Pages → Source: "GitHub Actions". The workflow skips the deploy with a warning until then.
+- [x] Switch on GitHub Pages: Settings → Pages → Source: "GitHub Actions" (done 2026-10-23,
+      after Gate B passed; the workflow had skipped the deploy with a warning until then).
 - [x] 2026-10-21: approved the Gate A amendment (the first shelf, count and lamp at houses 5, 7
       and 8; D82) and the CLAUDE.md update of rule 5 and the input rule (D69, D72).
 - [x] 2026-10-22: chose depth for tune round 3, the last (D91): A6's ceilings for houses 8–24
       free to rise (set by D97), a new blind playtest after it, a fail ends Shy Ghosts.
 
 ## Next steps (in order)
-1. The `/test/` link to Hasan once GitHub Pages is on (Settings → Pages → Source: "GitHub
-   Actions"; the Pages workflow's `configure-pages` cannot switch it on with the workflow's
-   token, so every run so far skipped the deploy); then re-run the Pages workflow and check
-   `e2e-live`.
+1. The `/test/` link to Hasan: Pages is on since 2026-10-23; this push runs the Pages workflow
+   (its `workflow_dispatch` is not reachable with the session's token), then `e2e-live` checks
+   the published links.
 2. **Epic 4 (feel, face and sound)**, TASKS.md: its feel constants move from `src/config.ts`
    ("Graybox motion") to `src/game/feel.ts`; it decides whether the two graybox aids of D59 (the
    lasting sight line, the glance dots) stay, and takes the palest rose and sky down a step (the
