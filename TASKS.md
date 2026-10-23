@@ -203,8 +203,10 @@ to what the graybox needs (D2).
   - [x] `feat(epic-3)` (the main session, `4e40bd2`)
   - [ ] Gate B (the playtester), B1–B7: rounds 1, 2 and 3 not passed (round 3: B5 and B7;
         docs/gate-b-round3.md); Hasan approved a third tune round, the last (D91: depth from
-        house 8, A6's ceilings for 8–24 may rise); its build is below; round 4 follows, and a
-        fail ends the game
+        house 8, A6's ceilings for 8–24 may rise); **round 4** (docs/gate-b-round4.md): B1 and
+        B3–B7 pass, verdict YES, interest median 4; B2 reads 20 of 23 houses cell for cell (three
+        shelf cells put in the neighbouring room) against its 100 %: whether the gate passes is
+        Hasan's decision
 
 - **Gate B tune round 1 of 2** (the plan: docs/gate-b-round1.md; decisions D67–D79; Gate A's
   thresholds and Gate B's bars B1–B7 unchanged). Each task's tests were seen failing first.
@@ -315,8 +317,8 @@ to what the graybox needs (D2).
   - [x] `code-review`, the adversarial audit and the auditor's A9 re-run (2026-10-23: Gate A
         A1–A9 passed on the auditor's own checker; the code audit 1 KRİTİK, 1 ORTA, 5 DÜŞÜK, the
         A9 re-run 2 DÜŞÜK; every finding fixed red first, docs/PROGRESS.md "Reviews and audits")
-  - [ ] the commit; round 4, the last (the protocol of docs/gate-b-round2.md §9); a fail ends
-        Shy Ghosts (D91)
+  - [x] the commit (`363ccbb`); round 4, the last (the protocol of docs/gate-b-round2.md §9):
+        played, docs/gate-b-round4.md; six bars pass, B2 is Hasan's call
 
 ## Epic 4 — Feel, face and sound (M2, part 1) — only after Gates A and B
 - `game/feel.ts` (every GDD §3a value as a named constant), procedural textures (ghost states,
